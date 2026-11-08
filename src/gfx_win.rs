@@ -13,7 +13,7 @@ use windows::Win32::Graphics::Imaging::*;
 use windows::Win32::System::Com::*;
 use windows::Win32::UI::Shell::SHCreateMemStream;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows_numerics::Matrix3x2;
+use windows_numerics::{Matrix3x2, Vector2};
 
 pub use crate::gfx::{Align, Color, Rect};
 
@@ -53,6 +53,7 @@ pub struct Fonts {
 
 pub struct Gfx {
     d2d: ID2D1Factory,
+    dw: IDWriteFactory,
     pub wic: IWICImagingFactory,
     rt: ID2D1DCRenderTarget,
     brush: ID2D1SolidColorBrush,
@@ -60,6 +61,8 @@ pub struct Gfx {
     dib: HBITMAP,
     old: HGDIOBJ,
     pub fonts: Fonts,
+    /// maps characters the UI font lacks (Chinese) to PingFang SC, if installed
+    fallback: Option<IDWriteFontFallback>,
     /// whole-window opacity used by `present` (255 = solid); lets a window fade
     alpha: std::cell::Cell<u8>,
     /// backing bitmap size; only the test snapshot helper reads it
@@ -104,9 +107,10 @@ impl Gfx {
             rt.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let brush = rt.CreateSolidColorBrush(&Color::white(1.0).d2d(), None)?;
 
-            let fonts = make_fonts(&dw)?;
+            let (fonts, fallback) = make_fonts(&dw)?;
             Ok(Gfx {
                 d2d,
+                dw,
                 wic,
                 rt,
                 brush,
@@ -114,6 +118,7 @@ impl Gfx {
                 dib,
                 old,
                 fonts,
+                fallback,
                 alpha: std::cell::Cell::new(255),
                 dims: (max_w, max_h),
             })
@@ -286,19 +291,35 @@ impl Gfx {
         }
         unsafe {
             let w: Vec<u16> = s.encode_utf16().collect();
-            let _ = f.SetTextAlignment(match align {
+            // A layout per draw call lets the custom font fallback work per
+            // character: Latin comes from the UI font, Chinese from PingFang.
+            let Ok(layout) = self.dw.CreateTextLayout(&w, f, r.w, r.h) else {
+                return;
+            };
+            let _ = layout.SetTextAlignment(match align {
                 Align::Left => DWRITE_TEXT_ALIGNMENT_LEADING,
                 Align::Center => DWRITE_TEXT_ALIGNMENT_CENTER,
                 Align::Right => DWRITE_TEXT_ALIGNMENT_TRAILING,
             });
+            if let Some(fb) = &self.fallback {
+                if let Ok(l2) = layout.cast::<IDWriteTextLayout2>() {
+                    let _ = l2.SetFontFallback(fb);
+                }
+            }
+            let trim = DWRITE_TRIMMING {
+                granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+                delimiter: 0,
+                delimiterCount: 0,
+            };
+            if let Ok(sign) = self.dw.CreateEllipsisTrimmingSign(&layout) {
+                let _ = layout.SetTrimming(&trim, &sign);
+            }
             self.brush.SetColor(&c.d2d());
-            self.rt.DrawText(
-                &w,
-                f,
-                &r.d2d(),
+            self.rt.DrawTextLayout(
+                Vector2 { X: r.x, Y: r.y },
+                &layout,
                 &self.brush,
                 D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
             );
         }
     }
@@ -474,7 +495,7 @@ impl Drop for Gfx {
 
 // -------------------------------------------------------------------- fonts
 
-fn make_fonts(dw: &IDWriteFactory) -> Result<Fonts> {
+fn make_fonts(dw: &IDWriteFactory) -> Result<(Fonts, Option<IDWriteFontFallback>)> {
     unsafe {
         let icon_family = if font_exists(dw, w!("Segoe Fluent Icons")) {
             w!("Segoe Fluent Icons")
@@ -504,18 +525,65 @@ fn make_fonts(dw: &IDWriteFactory) -> Result<Fonts> {
                 }
                 Ok(f)
             };
-        let ui = w!("Segoe UI");
-        Ok(Fonts {
-            title: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 17.0)?,
-            body: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
-            small: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?,
-            menu: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?,
-            tiny: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 11.0)?,
-            big: text(ui, DWRITE_FONT_WEIGHT_LIGHT, 34.0)?,
-            icon14: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
-            icon18: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 18.0)?,
-            icon22: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 22.0)?,
+        let ui = if font_exists(dw, w!("Inter")) {
+            w!("Inter")
+        } else {
+            w!("Segoe UI")
+        };
+        let fallback = make_cjk_fallback(dw, ui);
+        Ok((
+            Fonts {
+                title: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 17.0)?,
+                body: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
+                small: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?,
+                menu: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?,
+                tiny: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 11.0)?,
+                big: text(ui, DWRITE_FONT_WEIGHT_LIGHT, 34.0)?,
+                icon14: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
+                icon18: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 18.0)?,
+                icon22: text(icon_family, DWRITE_FONT_WEIGHT_NORMAL, 22.0)?,
+            },
+            fallback,
+        ))
+    }
+}
+
+/// Custom font fallback: characters the UI font cannot show (Chinese) go to
+/// 苹方-简 when it is installed, so Latin text can use Inter while Chinese
+/// stays in PingFang. Without the font or on any failure the system fallback
+/// is kept as before.
+fn make_cjk_fallback(dw: &IDWriteFactory, base: PCWSTR) -> Option<IDWriteFontFallback> {
+    let target = [w!("PingFang SC"), w!("苹方-简")]
+        .into_iter()
+        .find(|f| font_exists(dw, *f))?;
+    // PingFang SC coverage: CJK punctuation, ideographs and fullwidth forms.
+    const CJK: &[(u32, u32)] = &[
+        (0x3000, 0x303F),   // CJK symbols and punctuation
+        (0x3400, 0x4DBF),   // CJK extension A
+        (0x4E00, 0x9FFF),   // CJK unified ideographs
+        (0xF900, 0xFAFF),   // CJK compatibility ideographs
+        (0x20000, 0x2A6DF), // extension B
+        (0x2A700, 0x2EBEF), // extensions C-F
+        (0xFF00, 0xFFEF),   // halfwidth and fullwidth forms
+    ];
+    let ranges: Vec<DWRITE_UNICODE_RANGE> = CJK
+        .iter()
+        .map(|&(a, b)| DWRITE_UNICODE_RANGE {
+            first: a,
+            last: b,
         })
+        .collect();
+    unsafe {
+        let Ok(dw2) = dw.cast::<IDWriteFactory2>() else {
+            return None;
+        };
+        let Ok(builder) = dw2.CreateFontFallbackBuilder() else {
+            return None;
+        };
+        builder
+            .AddMapping(&ranges, &[target.as_ptr()], None, PCWSTR::null(), base, 1.0)
+            .ok()?;
+        builder.CreateFontFallback().ok()
     }
 }
 
