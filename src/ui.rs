@@ -729,6 +729,15 @@ pub(crate) fn settings_rows(a: &App) -> Vec<SetRow> {
             v.push(SetRow::Toggle("Start with Windows", 1, a.settings_snap.0));
             v.push(SetRow::Toggle("Show in Start menu and search", 2, c.start_menu));
             v.push(SetRow::Toggle("24-hour clock", 3, c.clock_24h));
+            let ws_label = if c.week_start.min(1) == 1 {
+                crate::i18n::tr("Monday")
+            } else {
+                crate::i18n::tr("Sunday")
+            };
+            v.push(SetRow::Radio("Week starts on", 7, ws_label.to_string(), open(7)));
+            if open(7) {
+                v.push(SetRow::Options(7, vec![opt("Sunday", 0), opt("Monday", 1)], c.week_start));
+            }
             let lang = if c.lang == crate::i18n::ZH { "简体中文" } else { "English" };
             v.push(SetRow::Radio("Language 语言", 6, lang.to_string(), open(6)));
             if open(6) {
@@ -1043,7 +1052,7 @@ fn page_clipboard(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     if typing || !a.clip_filter.is_empty() {
         let mut t = a.clip_filter.clone();
         if typing {
-            t.push('\u{2502}');
+            t.push('|');
         }
         g.fill_rrect(sr, 12.0, Color::white(0.14 * ca));
         g.text(&t, Rect::new(sr.x + 10.0, sr.y, sr.w - 30.0, sr.h), &f.small, T1.fade(ca), Align::Left);
@@ -1256,7 +1265,7 @@ fn page_app_picker(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     if typing || !a.app_filter.is_empty() {
         let mut t = a.app_filter.clone();
         if typing {
-            t.push('\u{2502}');
+            t.push('|');
         }
         g.fill_rrect(sr, 13.0, Color::white(0.14 * ca));
         g.text(&t, Rect::new(sr.x + 12.0, sr.y, sr.w - 16.0, sr.h), &f.small, T1.fade(ca), Align::Left);
@@ -1375,7 +1384,7 @@ fn page_tasks(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     let left = a.timer_remaining_ms();
     let done = !a.timer_running() && left == 0;
     let face = match (&a.entering, a.entry_timer) {
-        (Some(buf), true) => format!("{}\u{2502} min", String::from_utf16_lossy(buf)),
+        (Some(buf), true) => format!("{}| min", String::from_utf16_lossy(buf)),
         _ => fmt_time(left as f64 / 1000.0),
     };
     g.text(
@@ -1522,7 +1531,7 @@ fn page_tasks(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         let r = Rect::new(tx, y, tw, 26.0);
         g.fill_rrect(r, 9.0, Color::white(0.14 * ca));
         let mut s = String::from_utf16_lossy(buf);
-        s.push('\u{2502}'); // caret
+        s.push('|'); // caret
         g.text(
             &s,
             Rect::new(r.x + 10.0, r.y, r.w - 16.0, r.h),
@@ -1583,19 +1592,33 @@ fn draw_calendar(a: &App, ca: f32) {
         "November",
         "December",
     ];
-    let x0 = 432.0;
+    // the card is 158 px wide: centre the 7-column grid in it instead of
+    // eyeballing an x offset (432 left a 4/14 px split)
     let cw = 20.0;
+    let x0 = 428.0 + (158.0 - 7.0 * cw) / 2.0;
+    let ws = a.cfg.week_start.min(1) as u32; // 0 = weeks start Sunday, 1 = Monday
+    let head = if crate::i18n::is_zh() {
+        format!("{}年{}月", year, month)
+    } else {
+        format!("{} {}", MONTHS[(month as usize - 1).min(11)], year)
+    };
     g.text(
-        &format!("{} {}", MONTHS[(month as usize - 1).min(11)], year),
+        &head,
         Rect::new(x0 - 4.0, 12.0, cw * 7.0 + 8.0, 22.0),
         &f.small,
         C_UP.fade(ca),
         Align::Center,
     );
-    for (i, d) in ["S", "M", "T", "W", "T", "F", "S"].iter().enumerate() {
+    // weekday initials in grid order: column c holds weekday (c + ws) % 7
+    let names: [&str; 7] = if crate::i18n::is_zh() {
+        ["日", "一", "二", "三", "四", "五", "六"]
+    } else {
+        ["S", "M", "T", "W", "T", "F", "S"]
+    };
+    for c in 0..7u32 {
         g.text(
-            d,
-            Rect::new(x0 + i as f32 * cw, 36.0, cw, 18.0),
+            names[((c + ws) % 7) as usize],
+            Rect::new(x0 + c as f32 * cw, 36.0, cw, 18.0),
             &f.tiny,
             C_UP.fade(0.55 * ca),
             Align::Center,
@@ -1603,9 +1626,11 @@ fn draw_calendar(a: &App, ca: f32) {
     }
     let first = first_weekday(day, wday);
     let dim = days_in_month(year, month);
+    let sun = (7 - ws) % 7; // grid column of Sunday
+    let sat = (13 - ws) % 7; // grid column of Saturday
     for d in 1..=dim {
         let slot = first + d - 1;
-        let (c, r) = (slot % 7, slot / 7);
+        let (c, r) = ((slot + 7 - ws) % 7, (slot + 7 - ws) / 7);
         let cell = Rect::new(x0 + c as f32 * cw, 56.0 + r as f32 * 20.0, cw, 20.0);
         if d == day {
             g.fill_circle(cell.cx(), cell.cy(), 9.5, C_UP.fade(ca));
@@ -1617,7 +1642,7 @@ fn draw_calendar(a: &App, ca: f32) {
                 Align::Center,
             );
         } else {
-            let col = if c == 0 || c == 6 { T3 } else { T2 };
+            let col = if c == sun || c == sat { T3 } else { T2 };
             g.text(&d.to_string(), cell, &f.tiny, col.fade(ca), Align::Center);
         }
     }

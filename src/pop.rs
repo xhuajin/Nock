@@ -900,12 +900,18 @@ impl App {
                 let (dy, dm) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
                 let first = crate::ui::first_of_month(dy, dm);
                 let dim = crate::ui::days_in_month(dy, dm);
-                let rows = (first + dim + 6) / 7;
+                let ws = self.cfg.week_start.min(1) as u32; // 0 = Sunday first, 1 = Monday
+                let rows = (first + dim + 6 - ws) / 7;
                 let cw = (w - 32.0) / 7.0;
                 let top = y;
                 ops.push(Box::new(move |g, h, hot| {
+                    let head = if crate::i18n::is_zh() {
+                        format!("{}年{}月", dy, dm)
+                    } else {
+                        format!("{} {}", MONTHS[(dm.max(1) as usize - 1) % 12], dy)
+                    };
                     g.text(
-                        &format!("{} {}", MONTHS[(dm.max(1) as usize - 1) % 12], dy),
+                        &head,
                         Rect::new(16.0, top, w - 32.0, 20.0),
                         &g.fonts.small,
                         th.t1,
@@ -926,12 +932,23 @@ impl App {
                     if cal_off != 0 {
                         btn(Rect::new(w - 16.0 - 132.0, top - 2.0, 58.0, 24.0), None, "Today", PopAct::CalToday, g, h);
                     }
-                    for (i, d) in ["S", "M", "T", "W", "T", "F", "S"].iter().enumerate() {
-                        g.text(d, Rect::new(16.0 + i as f32 * cw, top + 22.0, cw, 18.0), &g.fonts.tiny, th.t2, Align::Center);
+                    let names: [&str; 7] = if crate::i18n::is_zh() {
+                        ["日", "一", "二", "三", "四", "五", "六"]
+                    } else {
+                        ["S", "M", "T", "W", "T", "F", "S"]
+                    };
+                    for c in 0..7u32 {
+                        g.text(
+                            names[((c + ws) % 7) as usize],
+                            Rect::new(16.0 + c as f32 * cw, top + 22.0, cw, 18.0),
+                            &g.fonts.tiny,
+                            th.t2,
+                            Align::Center,
+                        );
                     }
                     for d in 1..=dim {
                         let slot = first + d - 1;
-                        let (c, r) = (slot % 7, slot / 7);
+                        let (c, r) = ((slot + 7 - ws) % 7, (slot + 7 - ws) / 7);
                         let cell = Rect::new(16.0 + c as f32 * cw, top + 42.0 + r as f32 * 28.0, cw, 28.0);
                         if cal_off == 0 && d == day {
                             g.fill_circle(cell.cx(), cell.cy(), 12.0, accent);

@@ -65,6 +65,7 @@ pub fn tr(s: &str) -> &str {
         "Bar & display" => "顶栏与显示",
         "Notch & hints" => "刘海与提醒",
         "Buddy & scenes" => "伙伴与小剧场",
+        "Week starts on" => "每周起始日",
 
         // ------------------------------------------------------- media tab
         "Nothing playing" => "未在播放",

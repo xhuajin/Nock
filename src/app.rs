@@ -2058,6 +2058,10 @@ impl App {
                     3 => self.set_water_min([0u16, 30, 45, 60, 90][v.min(4) as usize]),
                     4 => self.set_eye_min([0u16, 20, 30, 45][v.min(3) as usize]),
                     5 => self.set_monitor(v),
+                    7 => {
+                        self.cfg.week_start = v.min(1);
+                        store::save_config(&self.cfg);
+                    }
                     _ => self.set_lang(v),
                 }
                 self.settings_open = None;
@@ -2803,8 +2807,11 @@ impl App {
         self.smart_hit = self.overlaps_notch(fgw);
         let kind = if self.tucked || ours || self.entering.is_some() {
             0
-        } else if self.cfg.auto_hide || self.smart_hit {
-            1 // hidden, but the top edge peeks it back (same as a full-screen app)
+        } else if self.cfg.auto_hide && !(self.pinned && self.expanded) {
+            1 // hidden, but the top edge peeks it back (same as a full-screen app);
+            // a pinned panel asks to stay open, so auto-hide steps aside
+        } else if self.smart_hit {
+            1 // a window covers the notch: fade either way, pin or not
         } else if !self.cfg.fs_hide {
             0
         } else {
