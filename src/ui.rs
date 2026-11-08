@@ -659,9 +659,9 @@ fn tile(a: &App, ca: f32, hits: &mut Vec<Hit>, r: Rect, act: Act, glyph: char, t
     hits.push(Hit { r, act });
     let hovered = hot(a, act);
     let bg = if on { a.accent } else if hovered { HOVER } else { SURF };
-    g.fill_rrect(r, 18.0, bg.fade(ca));
+    g.fill_rrect(r, 12.0, bg.fade(ca));
     if on && hovered {
-        g.fill_rrect(r, 18.0, Color::white(0.10 * ca));
+        g.fill_rrect(r, 12.0, Color::white(0.10 * ca));
     }
     let ic = Rect::new(r.x + 12.0, r.y + (r.h - 34.0) / 2.0, 34.0, 34.0);
     let tint = match glyph { '\u{E722}' => Color(0.98, 0.45, 0.55, 1.0), '\u{E7F4}' => C_MEM, '\u{E767}' => C_UP, '\u{E774}' => C_CPU, '\u{E83F}' => C_BAT, _ => T1 };
@@ -970,7 +970,8 @@ const C_FOC: Color = Color(1.0, 0.58, 0.42, 1.0);
 #[allow(clippy::too_many_arguments)]
 fn stat_tile(g: &Gfx, r: Rect, glyph: char, label: &str, value: &str, note: &str, frac: Option<f32>, col: Color, ca: f32) {
     let f = &g.fonts;
-    g.fill_rrect(r, 20.0, SURF.fade(ca));
+    // concentric with the 36 px panel: 36 - the 14 px side inset
+    g.fill_rrect(r, 22.0, SURF.fade(ca));
     g.icon(glyph, Rect::new(r.x + 14.0, r.y + 12.0, 22.0, 22.0), &f.icon14, col.fade(ca));
     g.text(label, Rect::new(r.x + 42.0, r.y + 12.0, 120.0, 22.0), &f.small, T3.fade(ca), Align::Left);
     g.text(note, Rect::new(r.x + r.w - 150.0, r.y + 12.0, 136.0, 22.0), &f.tiny, T3.fade(ca), Align::Right);
@@ -984,7 +985,8 @@ fn stat_tile(g: &Gfx, r: Rect, glyph: char, label: &str, value: &str, note: &str
 
 fn page_stats(a: &App, ca: f32) {
     let g = &a.gfx;
-    let (w, h, gap) = (280.0, 92.0, 12.0);
+    // 14 px margins on the left, right and bottom alike (6 + 89 + 12 + 89 = 196)
+    let (w, h, gap) = (280.0, 89.0, 12.0);
     let at = |c: f32, r: f32| Rect::new(14.0 + c * (w + gap), 6.0 + r * (h + gap), w, h);
     stat_tile(g, at(0.0, 0.0), '\u{E9D9}', "CPU", &format!("{}%", a.stat_cpu), "", Some(a.bar_cpu), C_CPU, ca);
     stat_tile(g, at(1.0, 0.0), '\u{E964}', "Memory", &format!("{}%", a.stat_mem), "", Some(a.bar_mem), C_MEM, ca);
@@ -1158,7 +1160,8 @@ fn page_apps(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         hits.push(Hit { r: x, act: xact });
         let over = hot(a, act) || hot(a, xact);
         let k = hot_k(a, act).max(hot_k(a, xact));
-        g.fill_rrect(rect, 16.0, Color::white((0.05 + 0.07 * k) * ca));
+        // concentric with the 36 px panel: 36 - the 28 px side inset
+        g.fill_rrect(rect, 8.0, Color::white((0.05 + 0.07 * k) * ca));
         let ic = Rect::new(rect.cx() - 18.0, rect.y + 10.0, 36.0, 36.0);
         match a.app_icons.get(i).and_then(|b| b.as_ref()) {
             Some(bmp) => g.draw_bitmap(bmp, ic, 0.0, ca),
@@ -1180,8 +1183,8 @@ fn page_apps(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         let rect = cell(a.apps.len());
         hits.push(Hit { r: rect, act: Act::AppAdd });
         let on = hot(a, Act::AppAdd);
-        g.fill_rrect(rect, 16.0, Color::white((if on { 0.12 } else { 0.04 }) * ca));
-        g.stroke_rrect(rect, 16.0, Color::white((if on { 0.35 } else { 0.14 }) * ca), 1.0);
+        g.fill_rrect(rect, 8.0, Color::white((if on { 0.12 } else { 0.04 }) * ca));
+        g.stroke_rrect(rect, 8.0, Color::white((if on { 0.35 } else { 0.14 }) * ca), 1.0);
         g.fill_circle(rect.cx(), rect.y + 28.0, 18.0, a.accent.fade((if on { 0.4 } else { 0.22 }) * ca));
         g.icon('\u{E710}', Rect::new(rect.cx() - 18.0, rect.y + 10.0, 36.0, 36.0), &f.icon14, a.accent.fade(ca));
         g.text("Add app", Rect::new(rect.x + 4.0, rect.y + 52.0, rect.w - 8.0, 24.0), &f.tiny, T2.fade(ca), Align::Center);
@@ -1191,19 +1194,21 @@ fn page_apps(a: &App, ca: f32, hits: &mut Vec<Hit>) {
 fn page_shelf(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     let g = &a.gfx;
     let f = &g.fonts;
-    let area = Rect::new(20.0, 2.0, EXP_W - 40.0, 202.0);
+    // the drop zone keeps a 20 px margin on the left, right and bottom, and its
+    // radius is concentric with the 36 px panel: 36 - 20
+    let area = Rect::new(20.0, 2.0, EXP_W - 40.0, 188.0);
     if a.shelf_hover {
         // a file is being dragged over the notch
-        g.fill_rrect(area, 18.0, a.accent.fade(0.14 * ca));
-        g.stroke_rrect(area, 18.0, a.accent.fade(0.9 * ca), 2.0);
+        g.fill_rrect(area, 16.0, a.accent.fade(0.14 * ca));
+        g.stroke_rrect(area, 16.0, a.accent.fade(0.9 * ca), 2.0);
         g.text("Drop to add to the shelf", area, &f.body, T1.fade(ca), Align::Center);
         return;
     }
     if a.shelf.is_empty() {
-        g.stroke_rrect(area, 18.0, Color::white(0.14 * ca), 1.0);
-        g.icon('\u{E896}', Rect::new(area.cx() - 20.0, 62.0, 40.0, 40.0), &f.icon22, a.accent.fade(ca));
-        g.text("Drop files here to keep them handy", Rect::new(area.x, 108.0, area.w, 24.0), &f.body, T1.fade(ca), Align::Center);
-        g.text("Drag them back out into any app. Click one to open it.", Rect::new(area.x, 132.0, area.w, 22.0), &f.small, T3.fade(ca), Align::Center);
+        g.stroke_rrect(area, 16.0, Color::white(0.14 * ca), 1.0);
+        g.icon('\u{E896}', Rect::new(area.cx() - 20.0, 50.0, 40.0, 40.0), &f.icon22, a.accent.fade(ca));
+        g.text("Drop files here to keep them handy", Rect::new(area.x, 96.0, area.w, 24.0), &f.body, T1.fade(ca), Align::Center);
+        g.text("Drag them back out into any app. Click one to open it.", Rect::new(area.x, 120.0, area.w, 22.0), &f.small, T3.fade(ca), Align::Center);
         return;
     }
     let (cols, tw, th) = (6usize, 88.0, 86.0);
@@ -1231,7 +1236,8 @@ fn page_shelf(a: &App, ca: f32, hits: &mut Vec<Hit>) {
             g.icon('\u{E711}', x, &f.icon14, (if hot(a, xact) { Color(1.0, 0.5, 0.5, 1.0) } else { T1 }).fade(ca));
         }
     }
-    let clear = Rect::new(EXP_W - 24.0 - 78.0, 190.0, 78.0, 18.0);
+    // footer strip under the drop zone, right-aligned with its edge
+    let clear = Rect::new(area.x + area.w - 78.0, 191.0, 78.0, 18.0);
     hits.push(Hit { r: clear, act: Act::ShelfClear });
     g.text("Clear all", clear, &f.tiny, (if hot(a, Act::ShelfClear) { T1 } else { T3 }).fade(ca), Align::Right);
 }
@@ -1336,10 +1342,11 @@ fn page_tasks(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     let g = &a.gfx;
     let f = &g.fonts;
 
-    // ---- cards
-    for (r, c) in [(Rect::new(14.0, 2.0, 208.0, 198.0), C_FOC), (Rect::new(230.0, 2.0, 190.0, 198.0), C_BAT), (Rect::new(428.0, 2.0, 158.0, 198.0), C_UP)] {
-        g.fill_rrect(r, 20.0, Color::white(0.05 * ca));
-        g.fill_rrect(r, 20.0, c.fade(0.07 * ca));
+    // ---- cards: 14 px margins on the left, right and bottom alike
+    for (r, c) in [(Rect::new(14.0, 2.0, 208.0, 194.0), C_FOC), (Rect::new(230.0, 2.0, 190.0, 194.0), C_BAT), (Rect::new(428.0, 2.0, 158.0, 194.0), C_UP)] {
+        // concentric with the 36 px panel: 36 - the 14 px side inset
+        g.fill_rrect(r, 22.0, Color::white(0.05 * ca));
+        g.fill_rrect(r, 22.0, c.fade(0.07 * ca));
     }
 
     // ---- focus timer
