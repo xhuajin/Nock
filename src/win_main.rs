@@ -218,21 +218,22 @@ fn on_update(hwnd: HWND, code: usize) {
     let cur = env!("CARGO_PKG_VERSION");
     let latest = sys::LATEST.lock().unwrap().clone();
     let show = |text: &str, flags: MESSAGEBOX_STYLE| unsafe { MessageBoxW(Some(hwnd), &HSTRING::from(text), w!("Nock"), flags | MB_SETFOREGROUND) };
+
     match code {
         0 => {
-            show("Couldn't check for updates. Are you online?", MB_OK | MB_ICONINFORMATION);
+            show(crate::i18n::tr("Couldn't check for updates. Are you online?"), MB_OK | MB_ICONINFORMATION);
         }
         1 => {
-            show(&format!("Nock {cur} is the latest version."), MB_OK | MB_ICONINFORMATION);
+            show(&crate::i18n::tf("Nock {cur} is the latest version.", &[("{cur}", cur)]), MB_OK | MB_ICONINFORMATION);
         }
         _ if sys::installed_by_setup() => {
-            let q = format!("Nock {} is available (you have {cur}).\n\nUpdate now? Nock restarts by itself in a few seconds.", latest.trim_start_matches('v'));
+            let q = crate::i18n::tf("Nock {v} is available (you have {cur}).\n\nUpdate now? Nock restarts by itself in a few seconds.", &[("{v}", latest.trim_start_matches('v')), ("{cur}", cur)]);
             if show(&q, MB_YESNO | MB_ICONQUESTION) == IDYES {
                 sys::install_update(&latest);
             }
         }
         _ => {
-            let q = format!("Nock {} is available (you have {cur}).\n\nYes: update now (Nock downloads it and restarts).\nNo: open the download page instead.", latest.trim_start_matches('v'));
+            let q = crate::i18n::tf("Nock {v} is available (you have {cur}).\n\nYes: update now (Nock downloads it and restarts).\nNo: open the download page instead.", &[("{v}", latest.trim_start_matches('v')), ("{cur}", cur)]);
             match show(&q, MB_YESNOCANCEL | MB_ICONQUESTION) {
                 IDYES => sys::update_portable(&latest),
                 IDNO => sys::open_releases(),
@@ -381,6 +382,14 @@ fn remove_tray(hwnd: HWND) {
     }
 }
 
+/// A translated menu label as a NUL-terminated UTF-16 buffer. `AppendMenuW`
+/// copies the text during the call, so a per-call temporary is fine.
+fn mt(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = crate::i18n::tr(s).encode_utf16().collect();
+    v.push(0);
+    v
+}
+
 fn on_tray(hwnd: HWND, a: &mut App, lp: LPARAM) {
     let ev = (lp.0 & 0xffff) as u32;
     if ev != WM_RBUTTONUP && ev != WM_CONTEXTMENU {
@@ -400,129 +409,136 @@ fn on_tray(hwnd: HWND, a: &mut App, lp: LPARAM) {
             menu,
             MF_STRING,
             5,
-            if a.tucked { w!("Show notch  (Ctrl+Alt+H)") } else { w!("Hide notch  (Ctrl+Alt+H)") },
+            PCWSTR(if a.tucked { mt("Show notch  (Ctrl+Alt+H)") } else { mt("Hide notch  (Ctrl+Alt+H)") }.as_ptr()),
         );
         let c24 = if a.cfg.clock_24h { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | c24, 11, w!("24-hour clock"));
+        let _ = AppendMenuW(menu, MF_STRING | c24, 11, PCWSTR(mt("24-hour clock").as_ptr()));
         let tb = if a.cfg.top_bar { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | tb, 7, w!("Top bar"));
+        let _ = AppendMenuW(menu, MF_STRING | tb, 7, PCWSTR(mt("Top bar").as_ptr()));
         let st = if a.cfg.stats { MF_CHECKED } else { MF_UNCHECKED };
         let fh = if a.cfg.fs_hide { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | fh, 16, w!("Hide in full-screen apps"));
+        let _ = AppendMenuW(menu, MF_STRING | fh, 16, PCWSTR(mt("Hide in full-screen apps").as_ptr()));
         let ah = if a.cfg.auto_hide { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | ah, 50, w!("Auto-hide (show when pointer hits the top edge)"));
+        let _ = AppendMenuW(menu, MF_STRING | ah, 50, PCWSTR(mt("Auto-hide (show when pointer hits the top edge)").as_ptr()));
         let sh = if a.cfg.smart_hide { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | sh, 51, w!("Fade out when a window covers it"));
+        let _ = AppendMenuW(menu, MF_STRING | sh, 51, PCWSTR(mt("Fade out when a window covers it").as_ptr()));
         let ac = if a.cfg.auto_close { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | ac, 17, w!("Close the panel when the pointer leaves"));
+        let _ = AppendMenuW(menu, MF_STRING | ac, 17, PCWSTR(mt("Close the panel when the pointer leaves").as_ptr()));
         let sm = if a.cfg.smart { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | sm, 18, w!("Smart hints (battery, break, copied link)"));
+        let _ = AppendMenuW(menu, MF_STRING | sm, 18, PCWSTR(mt("Smart hints (battery, break, copied link)").as_ptr()));
         let ss = if a.cfg.smart_sound { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | ss, 19, w!("Chime for meeting, battery and break hints"));
+        let _ = AppendMenuW(menu, MF_STRING | ss, 19, PCWSTR(mt("Chime for meeting, battery and break hints").as_ptr()));
         let ab = if a.cfg.auto_break { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | ab, 13, w!("Auto break after focus (5 min)"));
-        let _ = AppendMenuW(menu, MF_STRING | st, 10, w!("CPU and memory on the bar"));
+        let _ = AppendMenuW(menu, MF_STRING | ab, 13, PCWSTR(mt("Auto break after focus (5 min)").as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING | st, 10, PCWSTR(mt("CPU and memory on the bar").as_ptr()));
         let res = if a.cfg.reserve_space { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | res, 6, w!("Reserve screen space (when top bar is off)"));
+        let _ = AppendMenuW(menu, MF_STRING | res, 6, PCWSTR(mt("Reserve screen space (when top bar is off)").as_ptr()));
         if let Ok(sub) = CreatePopupMenu() {
             let cur = a.cfg.buddy;
             let mark = |id: u8| if cur == id { MF_CHECKED } else { MF_UNCHECKED };
-            let _ = AppendMenuW(sub, MF_STRING | mark(0), 20, w!("Off"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(5), 25, w!("Robot (default)"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(2), 22, w!("Kitty"));
+            let _ = AppendMenuW(sub, MF_STRING | mark(0), 20, PCWSTR(mt("Off").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(5), 25, PCWSTR(mt("Robot (default)").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(2), 22, PCWSTR(mt("Kitty").as_ptr()));
             let _ = AppendMenuW(sub, MF_SEPARATOR, 0, PCWSTR::null());
-            let _ = AppendMenuW(sub, MF_STRING | mark(6), 26, w!("Ronin (pixel, talks)"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(7), 27, w!("Courier (pixel, talks)"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(8), 28, w!("Necromancer (pixel, talks)"));
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Buddy"));
+            let _ = AppendMenuW(sub, MF_STRING | mark(6), 26, PCWSTR(mt("Ronin (pixel, talks)").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(7), 27, PCWSTR(mt("Courier (pixel, talks)").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(8), 28, PCWSTR(mt("Necromancer (pixel, talks)").as_ptr()));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Buddy").as_ptr()));
         }
         if let Ok(sub) = CreatePopupMenu() {
             let cur = a.cfg.idle_glance;
             let mark = |id: u8| if cur == id { MF_CHECKED } else { MF_UNCHECKED };
-            let _ = AppendMenuW(sub, MF_STRING | mark(0), 90, w!("Off"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(1), 91, w!("Tasks left"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(2), 92, w!("Focus today"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(3), 93, w!("CPU and RAM"));
-            let _ = AppendMenuW(sub, MF_STRING | mark(4), 94, w!("Next meeting"));
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Idle glance"));
+            let _ = AppendMenuW(sub, MF_STRING | mark(0), 90, PCWSTR(mt("Off").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(1), 91, PCWSTR(mt("Tasks left").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(2), 92, PCWSTR(mt("Focus today").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(3), 93, PCWSTR(mt("CPU and RAM").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(4), 94, PCWSTR(mt("Next meeting").as_ptr()));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Idle glance").as_ptr()));
         }
         let fb = if a.cfg.idle_focus_bar { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | fb, 95, w!("Show focus progress on the notch"));
+        let _ = AppendMenuW(menu, MF_STRING | fb, 95, PCWSTR(mt("Show focus progress on the notch").as_ptr()));
         let dl = if a.cfg.day_line { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | dl, 96, w!("Workday progress line on the notch"));
+        let _ = AppendMenuW(menu, MF_STRING | dl, 96, PCWSTR(mt("Workday progress line on the notch").as_ptr()));
         let ic = if a.cfg.idle_cycle { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | ic, 97, w!("Scroll up over the notch cycles time, date, tasks"));
+        let _ = AppendMenuW(menu, MF_STRING | ic, 97, PCWSTR(mt("Scroll up over the notch cycles time, date, tasks").as_ptr()));
         let sd = if a.cfg.state_dot { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | sd, 98, w!("State dot on the notch (mic, battery, focus)"));
+        let _ = AppendMenuW(menu, MF_STRING | sd, 98, PCWSTR(mt("State dot on the notch (mic, battery, focus)").as_ptr()));
         let pk = if a.cfg.peek { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | pk, 99, w!("Buddy peeks over the notch now and then"));
+        let _ = AppendMenuW(menu, MF_STRING | pk, 99, PCWSTR(mt("Buddy peeks over the notch now and then").as_ptr()));
         if let Ok(sub) = CreatePopupMenu() {
             let on = if a.cfg.scenes { MF_CHECKED } else { MF_UNCHECKED };
-            let _ = AppendMenuW(sub, MF_STRING | on, 30, w!("Play scenes now and then"));
+            let _ = AppendMenuW(sub, MF_STRING | on, 30, PCWSTR(mt("Play scenes now and then").as_ptr()));
             let _ = AppendMenuW(sub, MF_SEPARATOR, 0, PCWSTR::null());
-            let _ = AppendMenuW(sub, MF_STRING, 31, w!("Play: Showdown"));
-            let _ = AppendMenuW(sub, MF_STRING, 32, w!("Play: Heist"));
-            let _ = AppendMenuW(sub, MF_STRING, 33, w!("Play: Team-up"));
-            let _ = AppendMenuW(sub, MF_STRING, 34, w!("Play: Duel at dusk"));
-            let _ = AppendMenuW(sub, MF_STRING, 35, w!("Play: Rise"));
-            let _ = AppendMenuW(sub, MF_STRING, 36, w!("Play: Alley fight"));
-            let _ = AppendMenuW(sub, MF_STRING, 38, w!("Play: Harry vs Voldemort"));
-            let _ = AppendMenuW(sub, MF_STRING, 39, w!("Play: Owl post"));
-            let _ = AppendMenuW(sub, MF_STRING, 40, w!("Play: Harry and friends vs Voldemort"));
-            let _ = AppendMenuW(sub, MF_STRING, 41, w!("Play: Quidditch"));
-            let _ = AppendMenuW(sub, MF_STRING, 42, w!("Play: Dementor"));
-            let _ = AppendMenuW(sub, MF_STRING, 43, w!("Play: Friday deploy"));
-            let _ = AppendMenuW(sub, MF_STRING, 44, w!("Play: You're on mute"));
-            let _ = AppendMenuW(sub, MF_STRING, 45, w!("Play: Low battery"));
-            let _ = AppendMenuW(sub, MF_STRING, 37, w!("Play: Cricket six")); // scene 6
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Scenes"));
+            let _ = AppendMenuW(sub, MF_STRING, 31, PCWSTR(mt("Play: Showdown").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 32, PCWSTR(mt("Play: Heist").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 33, PCWSTR(mt("Play: Team-up").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 34, PCWSTR(mt("Play: Duel at dusk").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 35, PCWSTR(mt("Play: Rise").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 36, PCWSTR(mt("Play: Alley fight").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 38, PCWSTR(mt("Play: Harry vs Voldemort").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 39, PCWSTR(mt("Play: Owl post").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 40, PCWSTR(mt("Play: Harry and friends vs Voldemort").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 41, PCWSTR(mt("Play: Quidditch").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 42, PCWSTR(mt("Play: Dementor").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 43, PCWSTR(mt("Play: Friday deploy").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 44, PCWSTR(mt("Play: You're on mute").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 45, PCWSTR(mt("Play: Low battery").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING, 37, PCWSTR(mt("Play: Cricket six").as_ptr())); // scene 6
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Scenes").as_ptr()));
         }
         if let Ok(sub) = CreatePopupMenu() {
             let cur = a.cfg.clock_style;
-            for (i, name) in [w!("Digital"), w!("Analog"), w!("Binary"), w!("Hours until Friday")].into_iter().enumerate() {
+            for (i, name) in ["Digital", "Analog", "Binary", "Hours until Friday"].into_iter().enumerate() {
                 let m = if cur as usize == i { MF_CHECKED } else { MF_UNCHECKED };
-                let _ = AppendMenuW(sub, MF_STRING | m, 60 + i, name);
+                let _ = AppendMenuW(sub, MF_STRING | m, 60 + i, PCWSTR(mt(name).as_ptr()));
             }
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Clock style"));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Clock style").as_ptr()));
         }
         if let Ok(sub) = CreatePopupMenu() {
             let cur = a.cfg.water_min;
-            for (i, (mins, name)) in [(0u16, w!("Off")), (30, w!("Every 30 minutes")), (45, w!("Every 45 minutes")), (60, w!("Every hour")), (90, w!("Every 90 minutes"))].into_iter().enumerate() {
+            for (i, (mins, name)) in [(0u16, "Off"), (30, "Every 30 minutes"), (45, "Every 45 minutes"), (60, "Every hour"), (90, "Every 90 minutes")].into_iter().enumerate() {
                 let m = if cur == mins { MF_CHECKED } else { MF_UNCHECKED };
-                let _ = AppendMenuW(sub, MF_STRING | m, 70 + i, name);
+                let _ = AppendMenuW(sub, MF_STRING | m, 70 + i, PCWSTR(mt(name).as_ptr()));
             }
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Water reminder"));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Water reminder").as_ptr()));
         }
         if let Ok(sub) = CreatePopupMenu() {
             let cur = a.cfg.eye_min;
-            for (i, (mins, name)) in [(0u16, w!("Off")), (20, w!("Every 20 minutes")), (30, w!("Every 30 minutes")), (45, w!("Every 45 minutes"))].into_iter().enumerate() {
+            for (i, (mins, name)) in [(0u16, "Off"), (20, "Every 20 minutes"), (30, "Every 30 minutes"), (45, "Every 45 minutes")].into_iter().enumerate() {
                 let m = if cur == mins { MF_CHECKED } else { MF_UNCHECKED };
-                let _ = AppendMenuW(sub, MF_STRING | m, 80 + i, name);
+                let _ = AppendMenuW(sub, MF_STRING | m, 80 + i, PCWSTR(mt(name).as_ptr()));
             }
-            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Look-away reminder (eyes)"));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Look-away reminder (eyes)").as_ptr()));
         }
         let mons = sys::monitors().len();
         if mons > 1 {
             if let Ok(sub) = CreatePopupMenu() {
                 let cur = a.cfg.monitor as usize;
-                let _ = AppendMenuW(sub, MF_STRING | if cur == 0 { MF_CHECKED } else { MF_UNCHECKED }, 100, w!("Primary display"));
+                let _ = AppendMenuW(sub, MF_STRING | if cur == 0 { MF_CHECKED } else { MF_UNCHECKED }, 100, PCWSTR(mt("Primary display").as_ptr()));
                 for i in 1..=mons.min(16) {
                     let m = if cur == i { MF_CHECKED } else { MF_UNCHECKED };
-                    let _ = AppendMenuW(sub, MF_STRING | m, 100 + i, &HSTRING::from(format!("Display {i}")));
+                    let _ = AppendMenuW(sub, MF_STRING | m, 100 + i, &HSTRING::from(crate::i18n::tf("Display {i}", &[("{i}", &i.to_string())])));
                 }
-                let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Show on display"));
+                let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(mt("Show on display").as_ptr()));
             }
         }
+        if let Ok(sub) = CreatePopupMenu() {
+            let mark = |id: u8| if a.cfg.lang == id { MF_CHECKED } else { MF_UNCHECKED };
+            // entries pass through tr unchanged: each names itself
+            let _ = AppendMenuW(sub, MF_STRING | mark(0), 64, PCWSTR(mt("English").as_ptr()));
+            let _ = AppendMenuW(sub, MF_STRING | mark(1), 65, PCWSTR(mt("简体中文").as_ptr()));
+            let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Language 语言"));
+        }
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let _ = AppendMenuW(menu, MF_STRING | auto, 1, w!("Start with Windows"));
+        let _ = AppendMenuW(menu, MF_STRING | auto, 1, PCWSTR(mt("Start with Windows").as_ptr()));
         let sm = if a.cfg.start_menu { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | sm, 14, w!("Show in Start menu and search"));
-        let _ = AppendMenuW(menu, MF_STRING, 2, w!("Edit pinned apps"));
-        let _ = AppendMenuW(menu, MF_STRING, 3, w!("Reload pinned apps"));
-        let _ = AppendMenuW(menu, MF_STRING, 4, w!("Open settings folder"));
+        let _ = AppendMenuW(menu, MF_STRING | sm, 14, PCWSTR(mt("Show in Start menu and search").as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, 2, PCWSTR(mt("Edit pinned apps").as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, 3, PCWSTR(mt("Reload pinned apps").as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, 4, PCWSTR(mt("Open settings folder").as_ptr()));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let _ = AppendMenuW(menu, MF_STRING, 15, w!("Check for updates"));
-        let _ = AppendMenuW(menu, MF_STRING, 9, w!("Quit"));
+        let _ = AppendMenuW(menu, MF_STRING, 15, PCWSTR(mt("Check for updates").as_ptr()));
+        let _ = AppendMenuW(menu, MF_STRING, 9, PCWSTR(mt("Quit").as_ptr()));
 
         let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);
@@ -577,6 +593,8 @@ fn on_tray(hwnd: HWND, a: &mut App, lp: LPARAM) {
             80..=83 => a.set_eye_min([0u16, 20, 30, 45][(cmd.0 - 80) as usize]),
             70..=74 => a.set_water_min([0u16, 30, 45, 60, 90][(cmd.0 - 70) as usize]),
             100..=116 => a.set_monitor((cmd.0 - 100) as u8),
+            64 => a.set_lang(0),
+            65 => a.set_lang(1),
             31..=45 => a.play_scene((cmd.0 - 31) as usize),
             9 => {
                 // Clean up, then end the process outright so no helper thread,

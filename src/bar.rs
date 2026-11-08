@@ -259,6 +259,7 @@ impl App {
 
         // right: laid out right-to-left
         let (_, mo, day, wd, hh, mm, _, _) = sys::local_time();
+        let zh = crate::i18n::is_zh();
         let time = if clock24 {
             format!("{:02}:{:02}", hh, mm)
         } else {
@@ -266,15 +267,23 @@ impl App {
                 0 => 12,
                 n => n,
             };
-            format!("{}:{:02} {}", h12, mm, if hh < 12 { "AM" } else { "PM" })
+            if zh {
+                format!("{} {}:{:02}", crate::i18n::tr(if hh < 12 { "AM" } else { "PM" }), h12, mm)
+            } else {
+                format!("{}:{:02} {}", h12, mm, if hh < 12 { "AM" } else { "PM" })
+            }
         };
-        let clock = format!(
-            "{} {} {}  {}",
-            DAYS[(wd % 7) as usize],
-            day,
-            MONTHS[((mo.max(1) - 1) % 12) as usize],
-            time
-        );
+        let clock = if zh {
+            format!("{}月{}日 {}  {}", mo.max(1), day, crate::i18n::tr(DAYS[(wd % 7) as usize]), time)
+        } else {
+            format!(
+                "{} {} {}  {}",
+                DAYS[(wd % 7) as usize],
+                day,
+                MONTHS[((mo.max(1) - 1) % 12) as usize],
+                time
+            )
+        };
         let mut x = w - 10.0;
         let item_y = 4.0;
         let item_h = BAR_H - 8.0;
@@ -283,12 +292,16 @@ impl App {
             Rect::new(x, item_y, width, item_h)
         };
 
-        let r = item(if clock24 { 128.0 } else { 148.0 });
+        let r = item(if clock24 { 128.0 } else { 148.0 } + if zh { 24.0 } else { 0.0 });
         draw_hover(g, th.hover, r, is_hot(BarAct::Clock));
         match clock_style {
             1 | 2 => {
                 // date on the left, an analog or binary clock on the right
-                let date = format!("{} {} {}", DAYS[(wd % 7) as usize], day, MONTHS[((mo.max(1) - 1) % 12) as usize]);
+                let date = if zh {
+                    format!("{}月{}日 {}", mo.max(1), day, crate::i18n::tr(DAYS[(wd % 7) as usize]))
+                } else {
+                    format!("{} {} {}", DAYS[(wd % 7) as usize], day, MONTHS[((mo.max(1) - 1) % 12) as usize])
+                };
                 g.text(&date, Rect::new(r.x, r.y, r.w - 34.0, r.h), &f.small, th.t1, Align::Right);
                 let (cx, cy) = (r.x + r.w - 15.0, r.y + r.h / 2.0);
                 if clock_style == 1 {
@@ -315,10 +328,10 @@ impl App {
                 // hours until Friday 00:00
                 let days = (5 + 7 - wd % 7) % 7;
                 let text = if wd % 7 == 5 {
-                    "It's Friday!".to_string()
+                    crate::i18n::tr("It's Friday!").to_string()
                 } else {
                     let left = days * 1440 - (hh * 60 + mm);
-                    format!("{}d {}h to Friday", left / 1440, (left % 1440) / 60)
+                    crate::i18n::tf("{d}d {h}h to Friday", &[("{d}", &(left / 1440).to_string()), ("{h}", &((left % 1440) / 60).to_string())])
                 };
                 g.text(&text, r, &f.small, th.t1, Align::Center);
             }
@@ -388,7 +401,7 @@ impl App {
         if let Some((cpu, mem)) = stats {
             // read-out only: not clickable, so it is not in `hits`
             let r = item(118.0);
-            g.text(&format!("CPU {cpu}%  RAM {mem}%"), r, &f.small, th.t2, Align::Center);
+            g.text(&crate::i18n::tf("CPU {cpu}%  RAM {mem}%", &[("{cpu}", &cpu.to_string()), ("{mem}", &mem.to_string())]), r, &f.small, th.t2, Align::Center);
         }
         bar.left_x = x;
 

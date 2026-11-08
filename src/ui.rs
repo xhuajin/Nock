@@ -119,9 +119,17 @@ fn draw_collapsed(a: &App, w: f32, ca: f32) {
         let mut label = match (a.alert_msg, a.alert_start) {
             ("Meeting", Some(start)) if !a.alert_label.is_empty() => {
                 let mins = (start - crate::cal::now().0 + 59).div_euclid(60);
-                format!("{} {}", a.alert_label, if mins > 0 { format!("{mins}m") } else { "now".to_string() })
+                format!(
+                    "{} {}",
+                    a.alert_label,
+                    if mins > 0 {
+                        crate::i18n::tf("{mins}m", &[("{mins}", &mins.to_string())])
+                    } else {
+                        crate::i18n::tr("now").to_string()
+                    }
+                )
             }
-            _ => a.alert_msg.to_string(),
+            _ => crate::i18n::tr(a.alert_msg).to_string(),
         };
         let mut col = white;
         if let Some(sw) = a.alert_swatch {
@@ -131,7 +139,12 @@ fn draw_collapsed(a: &App, w: f32, ca: f32) {
         } else if a.alert_msg == "Battery low" {
             col = amber;
             if let Some(s) = sys::battery_info().filter(|b| !b.plugged).and_then(|b| b.secs_left) {
-                label = format!("Battery low {}", if s >= 3600 { format!("{}h{:02}m", s / 3600, s % 3600 / 60) } else { format!("{}m", s / 60) });
+                let dur = if s >= 3600 {
+                    crate::i18n::tf("{}h{:02}m", &[("{}", &(s / 3600).to_string()), ("{:02}", &format!("{:02}", s % 3600 / 60))])
+                } else {
+                    crate::i18n::tf("{}m", &[("{}", &(s / 60).to_string())])
+                };
+                label = crate::i18n::tf("Battery low {t}", &[("{t}", &dur)]);
             }
             g.icon('\u{E850}', Rect::new(w / 2.0 - 66.0, 0.0, 20.0, ch), &f.icon14, amber);
         } else if a.alert_msg == "Meeting" {
@@ -165,7 +178,7 @@ fn draw_collapsed(a: &App, w: f32, ca: f32) {
         if muted {
             g.fill_poly(&[(cx - 4.0, cy + 7.0), (cx - 2.0, cy + 8.5), (cx + 10.0, cy - 7.0), (cx + 8.0, cy - 8.5)], red);
         }
-        let txt = if a.mic_muted { "Muted".to_string() } else if mins == 0 { "Mic on".to_string() } else { format!("Mic {}m", mins) };
+        let txt = if a.mic_muted { crate::i18n::tr("Muted").to_string() } else if mins == 0 { crate::i18n::tr("Mic on").to_string() } else { crate::i18n::tf("Mic {}m", &[("{}", &mins.to_string())]) };
         g.text(&txt, Rect::new(cx + 16.0, 0.0, 80.0, ch), &f.small, T1.fade(ca), Align::Left);
         return;
     }
@@ -763,7 +776,11 @@ fn page_stats(a: &App, ca: f32) {
     }
     let up = sys::uptime_secs();
     let (d, hh, m) = (up / 86400, (up % 86400) / 3600, (up % 3600) / 60);
-    let text = if d > 0 { format!("{d}d {hh}h {m}m") } else { format!("{hh}h {m}m") };
+    let text = if d > 0 {
+        crate::i18n::tf("{d}d {hh}h {m}m", &[("{d}", &d.to_string()), ("{hh}", &hh.to_string()), ("{m}", &m.to_string())])
+    } else {
+        crate::i18n::tf("{hh}h {m}m", &[("{hh}", &hh.to_string()), ("{m}", &m.to_string())])
+    };
     stat_tile(g, at(1.0, 1.0), '\u{E916}', "Uptime", &text, "", None, C_UP, ca);
 }
 
@@ -776,9 +793,9 @@ fn page_clipboard(a: &App, ca: f32, hits: &mut Vec<Hit>) {
 
     let total = a.pins.len() + a.clips.len();
     let head = if total == 0 {
-        "Clipboard".to_string()
+        crate::i18n::tr("Clipboard").to_string()
     } else {
-        format!("Clipboard  \u{00B7}  {}", total)
+        crate::i18n::tf("Clipboard  \u{00B7}  {}", &[("{}", &total.to_string())])
     };
     g.text(&head, Rect::new(28.0, 12.0, 200.0, 24.0), &f.small, C_MEM.fade(ca), Align::Left);
     if !a.clips.is_empty() {
@@ -1098,12 +1115,12 @@ fn page_tasks(a: &App, ca: f32, hits: &mut Vec<Hit>) {
 
     // ---- focus timer
     let title = if a.break_mode {
-        "Break".to_string()
+        crate::i18n::tr("Break").to_string()
     } else if let Some(t) = &a.timer_task {
         let short: String = t.chars().take(20).collect();
-        format!("Focus \u{00B7} {short}")
+        crate::i18n::tf("Focus \u{00B7} {short}", &[("{short}", &short)])
     } else {
-        "Focus timer".to_string()
+        crate::i18n::tr("Focus timer").to_string()
     };
     g.text(
         &title,
@@ -1113,7 +1130,7 @@ fn page_tasks(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         Align::Left,
     );
     g.text(
-        &format!("Today: {} min focus \u{00B7} {} done", a.focus_today, a.done_today),
+        &crate::i18n::tf("Today: {f} min focus \u{00B7} {n} done", &[("{f}", &a.focus_today.to_string()), ("{n}", &a.done_today.to_string())]),
         Rect::new(28.0, 176.0, 190.0, 16.0),
         &f.tiny,
         T3.fade(ca),

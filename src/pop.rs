@@ -278,10 +278,10 @@ impl App {
     pub fn on_bt_done(&mut self, ok: bool) {
         let Some((_, on, name)) = self.bt_busy.take() else { return };
         let text = match (ok, on) {
-            (true, true) => format!("Connected to {name}"),
-            (true, false) => format!("Disconnected from {name}"),
-            (false, true) => format!("Couldn't connect to {name}"),
-            (false, false) => format!("Couldn't disconnect {name}"),
+            (true, true) => crate::i18n::tf("Connected to {name}", &[("{name}", &name)]),
+            (true, false) => crate::i18n::tf("Disconnected from {name}", &[("{name}", &name)]),
+            (false, true) => crate::i18n::tf("Couldn't connect to {name}", &[("{name}", &name)]),
+            (false, false) => crate::i18n::tf("Couldn't disconnect {name}", &[("{name}", &name)]),
         };
         self.notify_result(BarAct::Bluetooth, text, ok);
         self.sync_link_timer();
@@ -523,13 +523,13 @@ impl App {
                 let (txt, col) = if let Some(m) = msg {
                     m
                 } else if let Some(n) = &wifi.busy {
-                    (format!("Connecting to {}\u{2026}", n), th.t2)
+                    (crate::i18n::tf("Connecting to {}…", &[("{}", n)]), th.t2)
                 } else {
                     match (radios.wifi, &wifi.connected) {
-                        (None, _) => ("Not available".to_string(), th.t2),
-                        (Some(false), _) => ("Off".to_string(), th.t2),
-                        (Some(true), Some(n)) => (format!("Connected to {}", n), th.t1),
-                        (Some(true), None) => ("Not connected".to_string(), th.t2),
+                        (None, _) => (crate::i18n::tr("Not available").to_string(), th.t2),
+                        (Some(false), _) => (crate::i18n::tr("Off").to_string(), th.t2),
+                        (Some(true), Some(n)) => (crate::i18n::tf("Connected to {}", &[("{}", n)]), th.t1),
+                        (Some(true), None) => (crate::i18n::tr("Not connected").to_string(), th.t2),
                     }
                 };
                 ops.push(note(txt, y, col));
@@ -537,7 +537,7 @@ impl App {
                 if wifi.busy.is_none() {
                     if let Some(c) = &wifi.connected {
                         if let Some(n) = wifi.nets.iter().find(|n| &n.ssid == c) {
-                            ops.push(note(format!("Signal {}%", n.signal), y, th.t2));
+                            ops.push(note(crate::i18n::tf("Signal {}%", &[("{}", &n.signal.to_string())]), y, th.t2));
                             y += 24.0;
                         }
                     }
@@ -555,7 +555,7 @@ impl App {
                     ops.push(note(t, y, c));
                     y += 26.0;
                 } else if let Some((_, on, name)) = &bt_busy {
-                    let v = if *on { "Connecting to" } else { "Disconnecting" };
+                    let v = if *on { crate::i18n::tr("Connecting to") } else { crate::i18n::tr("Disconnecting") };
                     ops.push(note(format!("{} {}\u{2026}", v, name), y, th.t2));
                     y += 26.0;
                 }
@@ -589,12 +589,12 @@ impl App {
                 ops.push(switch(radios.wifi == Some(true), 0, y));
                 y += 36.0;
                 let status = match radios.wifi {
-                    None => "Wi-Fi isn't available on this PC".to_string(),
-                    Some(false) => "Off".to_string(),
+                    None => crate::i18n::tr("Wi-Fi isn't available on this PC").to_string(),
+                    Some(false) => crate::i18n::tr("Off").to_string(),
                     Some(true) => match (&wifi.busy, &wifi.connected) {
-                        (Some(n), _) => format!("Connecting to {}\u{2026}", n),
-                        (None, Some(n)) => format!("Connected to {}", n),
-                        (None, None) => "Not connected".to_string(),
+                        (Some(n), _) => crate::i18n::tf("Connecting to {}…", &[("{}", n)]),
+                        (None, Some(n)) => crate::i18n::tf("Connected to {}", &[("{}", n)]),
+                        (None, None) => crate::i18n::tr("Not connected").to_string(),
                     },
                 };
                 ops.push(note(status, y, th.t2));
@@ -608,7 +608,7 @@ impl App {
                     if let Some(entry) = &pw {
                         // password form
                         let ssid = entry.ssid.clone();
-                        ops.push(note(format!("Password for {}", ssid), y, th.t1));
+                        ops.push(note(crate::i18n::tf("Password for {}", &[("{}", &ssid)]), y, th.t1));
                         y += 26.0;
                         let shown: String = if entry.show {
                             String::from_utf16_lossy(&entry.buf)
@@ -837,17 +837,17 @@ impl App {
                         } else {
                             "On battery"
                         };
-                        let mut st = status.to_string();
+                        let mut st = crate::i18n::tr(status).to_string();
                         if let (false, Some(s)) = (b.plugged, b.secs_left) {
                             let (h, m) = (s / 3600, (s % 3600) / 60);
                             st = if h > 0 {
-                                format!("{} \u{00B7} {} h {} min left", status, h, m)
+                                crate::i18n::tf("{st} · {h} h {m} min left", &[("{st}", crate::i18n::tr(status)), ("{h}", &h.to_string()), ("{m}", &m.to_string())])
                             } else {
-                                format!("{} \u{00B7} {} min left", status, m)
+                                crate::i18n::tf("{st} · {m} min left", &[("{st}", crate::i18n::tr(status)), ("{m}", &m.to_string())])
                             };
                         }
                         if b.saver {
-                            st.push_str(" \u{00B7} Battery saver on");
+                            st.push_str(crate::i18n::tr(" · Battery saver on"));
                         }
                         ops.push(note(st, y + 46.0, th.t2));
                         let frac = b.percent as f32 / 100.0;
@@ -877,7 +877,11 @@ impl App {
             }
             BarAct::Clock => {
                 ops.push(Box::new({
-                    let t = format!("{}, {} {}", DAYS_LONG[(wday % 7) as usize], day, MONTHS[(month.max(1) as usize - 1) % 12]);
+                    let t = if crate::i18n::is_zh() {
+                        format!("{}月{}日 {}", month.max(1), day, crate::i18n::tr(DAYS_LONG[(wday % 7) as usize]))
+                    } else {
+                        format!("{}, {} {}", DAYS_LONG[(wday % 7) as usize], day, MONTHS[(month.max(1) as usize - 1) % 12])
+                    };
                     move |g, _h, _| {
                         g.text(&t, Rect::new(16.0, 14.0, w - 32.0, 24.0), &g.fonts.menu, th.t1, Align::Left);
                     }

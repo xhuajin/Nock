@@ -198,6 +198,7 @@ impl Gfx {
         if s.is_empty() || c.3 <= 0.003 {
             return;
         }
+        let s = crate::i18n::tr(s);
         // Text honours translation and uniform scale only (nothing rotates text).
         let t = self.ts.get();
         let k = t.sx;
@@ -262,6 +263,7 @@ impl Gfx {
 
     /// Width of `s` in DIPs.
     pub fn text_width(&self, s: &str, f: &Font) -> f32 {
+        let s = crate::i18n::tr(s);
         s.chars().map(|c| f.face.metrics(c, f.size).advance_width).sum()
     }
 

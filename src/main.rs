@@ -17,6 +17,7 @@ mod scene;
 #[cfg(windows)]
 mod shelf;
 mod gfx;
+mod i18n;
 #[cfg(windows)]
 mod pop;
 #[cfg(windows)]

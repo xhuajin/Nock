@@ -289,6 +289,7 @@ impl Gfx {
         if s.is_empty() || c.3 <= 0.003 {
             return;
         }
+        let s = crate::i18n::tr(s);
         unsafe {
             let w: Vec<u16> = s.encode_utf16().collect();
             // A layout per draw call lets the custom font fallback work per

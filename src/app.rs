@@ -590,6 +590,7 @@ impl App {
             active_min: 0,
         };
         a.update_monitor();
+        crate::i18n::set_lang(a.cfg.lang);
         sys::watch_mic(hwnd.0 as isize);
         sys::watch_mic_sessions(hwnd.0 as isize);
         a.load_app_icons();
@@ -1276,6 +1277,16 @@ impl App {
         self.render();
     }
 
+    /// Tray: switch the UI language. Text is looked up at draw time, so only a
+    /// repaint is needed; the tray menu rebuilds itself on the next right-click.
+    pub fn set_lang(&mut self, lang: u8) {
+        self.cfg.lang = lang.min(1);
+        store::save_config(&self.cfg);
+        crate::i18n::set_lang(self.cfg.lang);
+        self.render_bar();
+        self.render();
+    }
+
     pub fn set_clock_style(&mut self, n: u8) {
         self.cfg.clock_style = n.min(3);
         store::save_config(&self.cfg);
@@ -1350,7 +1361,17 @@ impl App {
         }
         self.cal_seen = Some((e.start, stage));
         let short: String = if e.title.chars().count() > 24 { e.title.chars().take(23).chain(std::iter::once('\u{2026}')).collect() } else { e.title.clone() };
-        self.buddy_say(&format!("{} starts {}", e.title, if mins > 0 { format!("in {mins} min") } else { "now".to_string() }), 7000);
+        let when = if mins > 0 {
+            crate::i18n::tf("in {mins} min", &[("{mins}", &mins.to_string())])
+        } else {
+            crate::i18n::tr("now").to_string()
+        };
+        let say = if crate::i18n::is_zh() {
+            format!("{} {}", e.title, when)
+        } else {
+            format!("{} starts {}", e.title, when)
+        };
+        self.buddy_say(&say, 7000);
         // stays up until the meeting has started (or you click it)
         self.pill_alert("Meeting", (e.start - now + 60).clamp(30, 900) as u64);
         if self.alert_msg == "Meeting" {
@@ -3593,9 +3614,9 @@ pub struct GlanceIn {
 /// Kinds: 1 tasks left, 2 focus today, 3 CPU and RAM, 4 next meeting, 5 date.
 pub fn glance_text(g: &GlanceIn) -> Option<(String, f32)> {
     match g.kind {
-        1 if g.has_todos => Some((format!("{} left", g.left), 64.0)),
-        2 => Some((format!("{} min", g.focus_min), 58.0)),
-        3 => g.stats.map(|(c, m)| (format!("CPU {c}% RAM {m}%"), 112.0)),
+        1 if g.has_todos => Some((crate::i18n::tf("{} left", &[("{}", &g.left.to_string())]), 64.0)),
+        2 => Some((crate::i18n::tf("{} min", &[("{}", &g.focus_min.to_string())]), 58.0)),
+        3 => g.stats.map(|(c, m)| (crate::i18n::tf("CPU {c}% RAM {m}%", &[("{c}", &c.to_string()), ("{m}", &m.to_string())]), 112.0)),
         4 => g.meeting.clone().map(|m| (m, 142.0)),
         5 => Some((g.date.clone(), 76.0)),
         _ => None,
@@ -3638,7 +3659,11 @@ pub fn next_meeting(events: &[crate::cal::Event], now: i64, hours: i64) -> Optio
 pub fn date_text(month: u32, day: u32, wday: u32) -> String {
     const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    format!("{} {} {}", DAYS[(wday as usize).min(6)], day, MONTHS[(month as usize).clamp(1, 12) - 1])
+    if crate::i18n::is_zh() {
+        format!("{}月{}日 {}", month.clamp(1, 12), day, crate::i18n::tr(DAYS[(wday as usize).min(6)]))
+    } else {
+        format!("{} {} {}", DAYS[(wday as usize).min(6)], day, MONTHS[(month as usize).clamp(1, 12) - 1])
+    }
 }
 
 /// How much of the workday [start, end) hours has passed at hh:mm; None outside the workday.
