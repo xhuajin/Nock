@@ -57,8 +57,14 @@ pub fn tr(s: &str) -> &str {
         "Shelf" => "架子",
         "Apps" => "应用",
         "Games" => "游戏",
-        "Power" => "电源",
+        "Settings" => "设置",
         "‹ Games" => "‹ 游戏",
+
+        // ---------------------------------------------- settings page groups
+        "General" => "通用",
+        "Bar & display" => "顶栏与显示",
+        "Notch & hints" => "刘海与提醒",
+        "Buddy & scenes" => "伙伴与小剧场",
 
         // ------------------------------------------------------- media tab
         "Nothing playing" => "未在播放",
