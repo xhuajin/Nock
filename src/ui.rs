@@ -404,7 +404,7 @@ pub fn squash(jiggle: f32) -> (f32, f32) {
     (a.0 + (b.0 - a.0) * k, a.1 + (b.1 - a.1) * k)
 }
 
-const TAB_LABELS: [&str; 9] = ["Media", "Controls", "Today", "Stats", "Clipboard", "Shelf", "Apps", "Games", "Power"];
+const TAB_LABELS: [&str; 9] = ["Media", "Controls", "Today", "Stats", "Clipboard", "Shelf", "Apps", "Games", "Settings"];
 
 /// Where each tab sits in the top row, in the same order as `PAGES`.
 pub fn tab_rects() -> Vec<Rect> {
@@ -470,7 +470,7 @@ fn draw_expanded(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         Page::Shelf => page_shelf(a, ca, hits),
         Page::Tasks => page_tasks(a, ca, hits),
         Page::Stats => page_stats(a, ca),
-        Page::Power => page_power(a, ca, hits),
+        Page::Settings => page_settings(a, ca, hits),
         Page::Game => {
             let (ox, oy) = ((EXP_W - crate::game::W) / 2.0, 14.0);
             if a.hub.is_playing() {
@@ -689,45 +689,274 @@ fn page_controls(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     tile(a, ca, hits, at(1.0, 2.0), Act::OpenSettings(4), '\u{E713}', "All settings", "Open Windows Settings", false);
 }
 
-// ----------------------------------------------------------------- power ----
+// -------------------------------------------------------------- settings ----
 
-fn page_power(a: &App, ca: f32, hits: &mut Vec<Hit>) {
-    let g = &a.gfx;
-    let f = &g.fonts;
-    let armed = |k: u8| matches!(a.power_confirm, Some((p, t)) if p == k && t.elapsed().as_secs_f32() < 3.5);
-    let items: [(char, &str, Act, u8); 4] = [
-        ('\u{E72E}', "Lock", Act::Quick(3), 0),
-        ('\u{E708}', "Sleep", Act::Quick(4), 0),
-        ('\u{E777}', "Restart", Act::PowerRestart, 1),
-        ('\u{E7E8}', "Shut down", Act::PowerShutdown, 2),
-    ];
-    let (w, gap) = (129.0, 12.0);
-    for (i, (glyph, label, act, k)) in items.iter().enumerate() {
-        let r = Rect::new(24.0 + i as f32 * (w + gap), 28.0, w, 130.0);
-        hits.push(Hit { r, act: *act });
-        let danger = *k != 0 && armed(*k);
-        // colour says how serious it is: calm blue and violet, amber for restart, red for shut down
-        let tint = [C_CPU, C_UP, C_MEM, Color(1.0, 0.42, 0.45, 1.0)][i];
-        let bg = if danger { Color(0.85, 0.25, 0.28, 1.0) } else if hot(a, *act) { HOVER } else { SURF };
-        g.fill_rrect(r, 20.0, bg.fade(ca));
-        if !danger {
-            g.fill_rrect(r, 20.0, tint.fade((if hot(a, *act) { 0.14 } else { 0.07 }) * ca));
-            g.fill_circle(r.cx(), r.y + 42.0, 24.0, tint.fade(0.16 * ca));
+/// One line of the Settings page. Every row is exactly `SET_PITCH` tall, so the
+/// scroll offset can snap to rows and nothing is ever drawn half-clipped.
+pub const SET_PITCH: f32 = 30.0;
+/// Visible height of the settings content: six rows, kept clear of the panel's
+/// rounded bottom corners.
+pub const SET_VIEW: f32 = 6.0 * SET_PITCH;
+
+/// Sidebar width / content left edge / the categories, top to bottom.
+const SET_CAT_W: f32 = 132.0;
+const SET_X: f32 = 148.0;
+const SET_CATS: [&str; 4] = ["General", "Bar & display", "Notch & hints", "Buddy & scenes"];
+
+pub(crate) struct SetOpt(pub String, pub u8);
+
+pub(crate) enum SetRow {
+    Toggle(&'static str, u8, bool),
+    /// label, group, current value (already translated), open
+    Radio(&'static str, u8, String, bool),
+    /// group, options, selected value; emitted right after an open Radio
+    Options(u8, Vec<SetOpt>, u8),
+    Action(&'static str, u8),
+}
+
+fn opt(key: &str, v: u8) -> SetOpt {
+    SetOpt(crate::i18n::tr(key).to_string(), v)
+}
+
+/// The rows of the selected Settings category, mirroring the tray menu.
+pub(crate) fn settings_rows(a: &App) -> Vec<SetRow> {
+    let c = &a.cfg;
+    let open = |g: u8| a.settings_open == Some(g);
+    let mut v: Vec<SetRow> = Vec::new();
+    match a.settings_cat {
+        0 => {
+            v.push(SetRow::Action("Hide notch  (Ctrl+Alt+H)", 4));
+            v.push(SetRow::Toggle("Start with Windows", 1, a.settings_snap.0));
+            v.push(SetRow::Toggle("Show in Start menu and search", 2, c.start_menu));
+            v.push(SetRow::Toggle("24-hour clock", 3, c.clock_24h));
+            let lang = if c.lang == crate::i18n::ZH { "简体中文" } else { "English" };
+            v.push(SetRow::Radio("Language 语言", 6, lang.to_string(), open(6)));
+            if open(6) {
+                v.push(SetRow::Options(6, vec![SetOpt("English".into(), 0), SetOpt("简体中文".into(), 1)], c.lang));
+            }
+            v.push(SetRow::Action("Edit pinned apps", 0));
+            v.push(SetRow::Action("Reload pinned apps", 1));
+            v.push(SetRow::Action("Open settings folder", 2));
+            v.push(SetRow::Action("Check for updates", 3));
         }
-        g.icon(*glyph, Rect::new(r.x, r.y + 22.0, r.w, 40.0), &f.icon22, (if danger { Color::white(1.0) } else { tint }).fade(ca));
-        g.text(label, Rect::new(r.x, r.y + 70.0, r.w, 24.0), &f.body, (if danger { Color::white(1.0) } else { T1 }).fade(ca), Align::Center);
-        if *k != 0 {
-            g.text(
-                if danger { "Click again to confirm" } else { "Asks to confirm" },
-                Rect::new(r.x + 4.0, r.y + 96.0, r.w - 8.0, 20.0),
-                &f.tiny,
-                (if danger { Color::white(0.95) } else { T3 }).fade(ca),
-                Align::Center,
-            );
+        1 => {
+            v.push(SetRow::Toggle("Top bar", 4, c.top_bar));
+            v.push(SetRow::Toggle("CPU and memory on the bar", 5, c.stats));
+            v.push(SetRow::Toggle("Reserve screen space (when top bar is off)", 6, c.reserve_space));
+            v.push(SetRow::Toggle("Hide in full-screen apps", 7, c.fs_hide));
+            v.push(SetRow::Toggle("Auto-hide (show when pointer hits the top edge)", 8, c.auto_hide));
+            v.push(SetRow::Toggle("Fade out when a window covers it", 9, c.smart_hide));
+            v.push(SetRow::Toggle("Close the panel when the pointer leaves", 10, c.auto_close));
+            let clock_opts = ["Digital", "Analog", "Binary", "Hours until Friday"];
+            v.push(SetRow::Radio("Clock style", 2, crate::i18n::tr(clock_opts[c.clock_style.min(3) as usize]).to_string(), open(2)));
+            if open(2) {
+                v.push(SetRow::Options(2, clock_opts.iter().enumerate().map(|(i, l)| opt(l, i as u8)).collect(), c.clock_style));
+            }
+            if a.settings_snap.1 > 1 {
+                let val = if c.monitor == 0 {
+                    crate::i18n::tr("Primary display").to_string()
+                } else {
+                    crate::i18n::tf("Display {i}", &[("{i}", &c.monitor.to_string())])
+                };
+                v.push(SetRow::Radio("Show on display", 5, val, open(5)));
+                if open(5) {
+                    let mut opts = vec![opt("Primary display", 0)];
+                    for i in 1..a.settings_snap.1.min(16) {
+                        opts.push(SetOpt(crate::i18n::tf("Display {i}", &[("{i}", &i.to_string())]), i as u8));
+                    }
+                    v.push(SetRow::Options(5, opts, c.monitor));
+                }
+            }
         }
+        2 => {
+            v.push(SetRow::Toggle("Smart hints (battery, break, copied link)", 11, c.smart));
+            v.push(SetRow::Toggle("Chime for meeting, battery and break hints", 12, c.smart_sound));
+            v.push(SetRow::Toggle("Auto break after focus (5 min)", 13, c.auto_break));
+            let water_opts = ["Off", "Every 30 minutes", "Every 45 minutes", "Every hour", "Every 90 minutes"];
+            let wv = [0u16, 30, 45, 60, 90].iter().position(|&m| m == c.water_min).unwrap_or(0) as u8;
+            v.push(SetRow::Radio("Water reminder", 3, crate::i18n::tr(water_opts[wv as usize]).to_string(), open(3)));
+            if open(3) {
+                v.push(SetRow::Options(3, water_opts.iter().enumerate().map(|(i, l)| opt(l, i as u8)).collect(), wv));
+            }
+            let eye_opts = ["Off", "Every 20 minutes", "Every 30 minutes", "Every 45 minutes"];
+            let ev = [0u16, 20, 30, 45].iter().position(|&m| m == c.eye_min).unwrap_or(0) as u8;
+            v.push(SetRow::Radio("Look-away reminder (eyes)", 4, crate::i18n::tr(eye_opts[ev as usize]).to_string(), open(4)));
+            if open(4) {
+                v.push(SetRow::Options(4, eye_opts.iter().enumerate().map(|(i, l)| opt(l, i as u8)).collect(), ev));
+            }
+            v.push(SetRow::Toggle("Show focus progress on the notch", 14, c.idle_focus_bar));
+            v.push(SetRow::Toggle("Workday progress line on the notch", 15, c.day_line));
+            v.push(SetRow::Toggle("Scroll up over the notch cycles time, date, tasks", 16, c.idle_cycle));
+            v.push(SetRow::Toggle("State dot on the notch (mic, battery, focus)", 17, c.state_dot));
+            let glance_opts = ["Off", "Tasks left", "Focus today", "CPU and RAM", "Next meeting"];
+            v.push(SetRow::Radio("Idle glance", 1, crate::i18n::tr(glance_opts[c.idle_glance.min(4) as usize]).to_string(), open(1)));
+            if open(1) {
+                v.push(SetRow::Options(1, glance_opts.iter().enumerate().map(|(i, l)| opt(l, i as u8)).collect(), c.idle_glance));
+            }
+        }
+        _ => {
+            let buddy_opts = ["Off", "Robot (default)", "Kitty", "Ronin (pixel, talks)", "Courier (pixel, talks)", "Necromancer (pixel, talks)"];
+            let buddy_vals = [0u8, 5, 2, 6, 7, 8];
+            let bv = buddy_vals.iter().position(|&b| b == c.buddy).unwrap_or(1);
+            v.push(SetRow::Radio("Buddy", 0, crate::i18n::tr(buddy_opts[bv]).to_string(), open(0)));
+            if open(0) {
+                v.push(SetRow::Options(0, buddy_opts.iter().enumerate().map(|(i, l)| opt(l, buddy_vals[i])).collect(), buddy_vals[bv]));
+            }
+            v.push(SetRow::Toggle("Buddy peeks over the notch now and then", 18, c.peek));
+            v.push(SetRow::Toggle("Play scenes now and then", 19, c.scenes));
+        }
+    }
+    v
+}
+
+/// Height of one row, in `SET_PITCH` units: options wrap into as many lines as needed.
+fn row_units(r: &SetRow) -> usize {
+    match r {
+        SetRow::Options(_, opts, _) => {
+            let mut lines = 1;
+            let mut x = SET_X;
+            for o in opts {
+                let w = est_w(&o.0, 11.0) + 24.0;
+                if x + w > EXP_W - 24.0 {
+                    x = SET_X;
+                    lines += 1;
+                }
+                x += w + 8.0;
+            }
+            lines
+        }
+        _ => 1,
     }
 }
 
+/// Total content height of the current category in px (for the wheel and scrollbar).
+pub fn settings_height(a: &App) -> f32 {
+    settings_rows(a)
+        .iter()
+        .map(|r| row_units(r) as f32 * SET_PITCH)
+        .sum()
+}
+
+/// Rough text width for sizing chips (CJK wide, rest narrow).
+fn est_w(s: &str, fs: f32) -> f32 {
+    s.chars().map(|ch| if ch as u32 >= 0x2e80 { fs } else { fs * 0.55 }).sum()
+}
+
+fn page_settings(a: &App, ca: f32, hits: &mut Vec<Hit>) {
+    let g = &a.gfx;
+    let f = &g.fonts;
+
+    // --- left sidebar: one button per category
+    for (i, label) in SET_CATS.iter().enumerate() {
+        let r = Rect::new(12.0, 6.0 + i as f32 * 32.0, SET_CAT_W - 14.0, 28.0);
+        let act = Act::CfgCat(i as u8);
+        hits.push(Hit { r, act });
+        let sel = a.settings_cat as usize == i;
+        if sel {
+            g.fill_rrect(r, 10.0, a.accent.fade(0.16 * ca));
+        } else if hot(a, act) {
+            g.fill_rrect(r, 10.0, HOVER.fade(ca));
+        }
+        g.text(crate::i18n::tr(label), r, &f.small, (if sel { a.accent } else { T2 }).fade(ca), Align::Center);
+    }
+
+    // --- right content: the selected category, scrolling whole rows only
+    let sy = a.settings_scroll as f32;
+    let mut y = 0.0f32;
+    for row in settings_rows(a) {
+        let units = row_units(&row);
+        let vy = y - sy;
+        y += units as f32 * SET_PITCH;
+        if vy + units as f32 * SET_PITCH <= 0.0 || vy >= SET_VIEW {
+            continue; // fully outside the visible rows
+        }
+        match row {
+            SetRow::Toggle(label, k, on) => {
+                let r = Rect::new(SET_X, vy, EXP_W - SET_X - 26.0, SET_PITCH - 2.0);
+                let act = Act::CfgToggle(k);
+                hits.push(Hit { r, act });
+                if hot(a, act) {
+                    g.fill_rrect(r, 10.0, HOVER.fade(ca));
+                }
+                g.text(crate::i18n::tr(label), Rect::new(r.x + 12.0, vy, r.w - 70.0, SET_PITCH), &f.small, T1.fade(ca), Align::Left);
+                let sw = Rect::new(r.x + r.w - 46.0, vy + (SET_PITCH - 18.0) / 2.0, 34.0, 18.0);
+                g.fill_rrect(sw, 9.0, (if on { a.accent } else { Color::white(0.22) }).fade(ca));
+                let kx = if on { sw.x + sw.w - 16.0 } else { sw.x + 2.0 };
+                g.fill_circle(kx + 7.0, sw.cy(), 7.0, Color::white(ca));
+            }
+            SetRow::Radio(label, group, val, is_open) => {
+                let r = Rect::new(SET_X, vy, EXP_W - SET_X - 26.0, SET_PITCH - 2.0);
+                let act = Act::CfgOpen(group);
+                hits.push(Hit { r, act });
+                if hot(a, act) || is_open {
+                    g.fill_rrect(r, 10.0, HOVER.fade(ca));
+                }
+                g.text(crate::i18n::tr(label), Rect::new(r.x + 12.0, vy, r.w - 190.0, SET_PITCH), &f.small, T1.fade(ca), Align::Left);
+                g.text(&val, Rect::new(r.x + r.w - 236.0, vy, 178.0, SET_PITCH), &f.tiny, T2.fade(ca), Align::Right);
+                g.icon(
+                    if is_open { '\u{E76B}' } else { '\u{E76C}' },
+                    Rect::new(r.x + r.w - 28.0, vy, 20.0, SET_PITCH),
+                    &f.icon14,
+                    T2.fade(ca),
+                );
+            }
+            SetRow::Options(group, opts, sel) => {
+                let mut x = SET_X;
+                let mut ly = vy + 3.0;
+                for SetOpt(label, v) in &opts {
+                    let w = est_w(label, 11.0) + 24.0;
+                    if x + w > EXP_W - 26.0 {
+                        x = SET_X;
+                        ly += SET_PITCH;
+                    }
+                    let r = Rect::new(x, ly, w, 24.0);
+                    let act = Act::CfgSet(group, *v);
+                    hits.push(Hit { r, act });
+                    let on = *v == sel;
+                    let bg = if on {
+                        a.accent
+                    } else if hot(a, act) {
+                        HOVER
+                    } else {
+                        SURF
+                    };
+                    g.fill_rrect(r, 12.0, bg.fade(ca));
+                    g.text(label, r, &f.tiny, (if on { Color::white(1.0) } else { T1 }).fade(ca), Align::Center);
+                    x += w + 8.0;
+                }
+            }
+            SetRow::Action(label, k) => {
+                let r = Rect::new(SET_X, vy, EXP_W - SET_X - 26.0, SET_PITCH - 2.0);
+                let act = Act::CfgAct(k);
+                hits.push(Hit { r, act });
+                if hot(a, act) {
+                    g.fill_rrect(r, 10.0, HOVER.fade(ca));
+                }
+                g.text(crate::i18n::tr(label), Rect::new(r.x + 12.0, vy, r.w - 60.0, SET_PITCH), &f.small, T1.fade(ca), Align::Left);
+                g.icon('\u{E76E}', Rect::new(r.x + r.w - 28.0, vy, 20.0, SET_PITCH), &f.icon14, T3.fade(ca));
+            }
+        }
+    }
+
+    // --- scroll bar: the thumb follows the rows and can be grabbed anywhere on its track
+    let total = y;
+    if total > SET_VIEW + 0.5 {
+        let track = Rect::new(EXP_W - 16.0, 2.0, 4.0, SET_VIEW - 8.0);
+        let thumb_h = (track.h * SET_VIEW / total).max(20.0);
+        let frac = (sy / (total - SET_VIEW)).clamp(0.0, 1.0);
+        g.fill_rrect(track, 2.0, Color::white(0.07 * ca));
+        g.fill_rrect(
+            Rect::new(track.x, track.y + (track.h - thumb_h) * frac, 4.0, thumb_h),
+            2.0,
+            (if hot(a, Act::SettingsThumb) { T1 } else { T2 }).fade(0.8 * ca),
+        );
+        // a wider invisible grab zone, like the media seek bar's
+        hits.push(Hit {
+            r: Rect::new(track.x - 6.0, track.y - 4.0, 16.0, track.h + 8.0),
+            act: Act::SettingsThumb,
+        });
+    }
+}
 // ----------------------------------------------------------------- stats ----
 
 /// Per-metric colours, so each stat reads at a glance.

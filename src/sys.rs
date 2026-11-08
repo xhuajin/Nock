@@ -14,7 +14,6 @@ use windows::Win32::System::Com::*;
 use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Memory::*;
 use windows::Win32::System::Registry::*;
-use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::System::SystemInformation::{GetLocalTime, GetSystemTimePreciseAsFileTime};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Shell::*;
@@ -1090,16 +1089,6 @@ pub fn open(target: &str, args: &str) {
     }
 }
 
-pub fn lock_pc() {
-    unsafe {
-        let _ = LockWorkStation();
-    }
-}
-
-pub fn sleep_pc() {
-    open("rundll32.exe", "powrprof.dll,SetSuspendState 0,1,0");
-}
-
 // ---------------------------------------------------------------- clipboard
 
 /// Password managers mark their copies with this format; we must not record them.
@@ -1594,19 +1583,6 @@ pub fn audio_peak() -> Option<f32> {
             }
         }
     })
-}
-
-fn shutdown_cmd(arg: &str) {
-    use std::os::windows::process::CommandExt;
-    let _ = std::process::Command::new("shutdown.exe").args([arg, "/t", "0"]).creation_flags(0x0800_0000).spawn();
-}
-
-pub fn restart_pc() {
-    shutdown_cmd("/r");
-}
-
-pub fn shutdown_pc() {
-    shutdown_cmd("/s");
 }
 
 /// Seconds since Windows started.

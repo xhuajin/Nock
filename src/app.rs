@@ -130,7 +130,7 @@ pub enum Page {
     Tasks,
     Game,
     Stats,
-    Power,
+    Settings,
 }
 
 pub const PAGES: [Page; 9] = [
@@ -142,7 +142,7 @@ pub const PAGES: [Page; 9] = [
     Page::Shelf,
     Page::Apps,
     Page::Game,
-    Page::Power,
+    Page::Settings,
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -180,9 +180,15 @@ pub enum Act {
     AppRetry,
     /// look for new / changed apps again (keeps showing the current list meanwhile)
     AppRefresh,
-    /// restart / shut down (asks to click twice)
-    PowerRestart,
-    PowerShutdown,
+    /// Settings tab: flip the n-th toggle / pick a value in the n-th radio group
+    /// / expand or collapse the n-th radio group / run the n-th action /
+    /// switch the n-th category / press the scrollbar
+    CfgToggle(u8),
+    CfgSet(u8, u8),
+    CfgOpen(u8),
+    CfgAct(u8),
+    CfgCat(u8),
+    SettingsThumb,
     /// click inside the running game
     GameClick,
     /// pick a game on the arcade screen
@@ -209,6 +215,8 @@ pub struct Hit {
 #[derive(Clone, Copy)]
 enum Drag {
     Seek(Rect),
+    /// Settings scrollbar: pointer start y, scroll at grab, scroll px per thumb px
+    SettingsV { y0: f32, scroll0: f32, ratio: f32 },
 }
 
 // ------------------------------------------------------------------ spring
@@ -340,6 +348,12 @@ pub struct App {
     pub clip_filter: String,
     pub entry_search: bool,
     pub clip_scroll: usize,
+    /// Settings tab: scroll offset / selected category / the expanded radio group
+    pub settings_scroll: usize,
+    pub settings_cat: u8,
+    pub settings_open: Option<u8>,
+    /// autostart + monitor count, sampled once when the Settings page opens
+    pub settings_snap: (bool, usize),
     /// months the top-bar calendar is shown away from the current month
     pub cal_off: i32,
     ignore_clip: Option<String>,
@@ -397,8 +411,6 @@ pub struct App {
     pub picker_icons: Vec<(String, Option<windows::Win32::Graphics::Direct2D::ID2D1Bitmap>)>,
     /// seconds, for spinners
     pub spin_t: f32,
-    /// which power button (1 restart, 2 shut down) was clicked once, and when
-    pub power_confirm: Option<(u8, Instant)>,
     /// live numbers for the Stats page
     pub stat_cpu: u32,
     pub stat_mem: u32,
@@ -522,6 +534,10 @@ impl App {
             clip_filter: String::new(),
             entry_search: false,
             clip_scroll: 0,
+            settings_scroll: 0,
+            settings_cat: 0,
+            settings_open: None,
+            settings_snap: (false, 1),
             cal_off: 0,
             ignore_clip: None,
             apps: store::load_apps(),
@@ -558,7 +574,6 @@ impl App {
             app_scroll: 0,
             picker_icons: Vec::new(),
             spin_t: 0.0,
-            power_confirm: None,
             stat_cpu: 0,
             stat_mem: 0,
             stat_prev: (0, 0),
@@ -1675,6 +1690,7 @@ impl App {
                     }
                 }
             }
+            Drag::SettingsV { .. } => {}
         }
         self.render();
     }
@@ -1683,6 +1699,12 @@ impl App {
         match self.drag {
             Some(Drag::Seek(r)) => {
                 self.seek_frac = Some(((x - r.x) / r.w).clamp(0.0, 1.0));
+            }
+            Some(Drag::SettingsV { y0, scroll0, ratio }) => {
+                // follow the pointer, snapped to the 30 px row grid
+                let t = (scroll0 + (self.cursor_y - y0) * ratio).clamp(0.0, self.settings_max());
+                self.settings_scroll = ((t / 30.0).round() * 30.0) as usize;
+                self.render();
             }
             None => {}
         }
@@ -1726,6 +1748,14 @@ impl App {
                 self.clip_scroll = self.clip_scroll.saturating_sub(1);
             }
             self.render();
+        } else if self.page == Page::Settings {
+            let max = self.settings_max() as usize;
+            self.settings_scroll = if delta < 0 {
+                (self.settings_scroll + 90).min(max)
+            } else {
+                self.settings_scroll.saturating_sub(90)
+            };
+            self.render();
         }
     }
 
@@ -1739,6 +1769,14 @@ impl App {
         self.page_t = if self.expanded { 0.0 } else { 1.0 };
         if p == Page::Controls {
             self.refresh_controls();
+        }
+        if p == Page::Settings {
+            // fresh page state and a snapshot of the registry / monitor state,
+            // so the per-frame draw never touches the registry itself
+            self.settings_scroll = 0;
+            self.settings_cat = 0;
+            self.settings_open = None;
+            self.settings_snap = (sys::autostart_enabled(), sys::monitors().len());
         }
         if p != Page::Apps {
             self.picking = false;
@@ -1797,8 +1835,7 @@ impl App {
                     self.set_expanded(false);
                     sys::open("ms-screenclip:", "");
                 }
-                3 => sys::lock_pc(),
-                _ => sys::sleep_pc(),
+                _ => {}
             },
             Act::ClipItem(i) => {
                 let item = self.clip_view().get(i).map(|(t, p)| (t.to_string(), *p));
@@ -1980,8 +2017,86 @@ impl App {
                 self.shelf_changed();
             }
             Act::OpenSettings(k) => sys::open(SETTINGS_PAGES[k.min(SETTINGS_PAGES.len() - 1)], ""),
-            Act::PowerRestart => self.power_press(1),
-            Act::PowerShutdown => self.power_press(2),
+            Act::CfgToggle(k) => {
+                match k {
+                    0 => self.toggle_tucked(),
+                    1 => {
+                        let on = !sys::autostart_enabled();
+                        sys::set_autostart(on);
+                        self.settings_snap.0 = on;
+                    }
+                    2 => {
+                        self.cfg.start_menu = !self.cfg.start_menu;
+                        store::save_config(&self.cfg);
+                        sys::sync_start_menu(self.cfg.start_menu);
+                    }
+                    3 => self.toggle_clock24(),
+                    4 => self.toggle_top_bar(),
+                    5 => self.toggle_stats(),
+                    6 => self.toggle_reserve(),
+                    7 => self.toggle_fs_hide(),
+                    8 => self.toggle_auto_hide(),
+                    9 => self.toggle_smart_hide(),
+                    10 => self.toggle_auto_close(),
+                    11 => self.toggle_smart(),
+                    12 => self.toggle_smart_sound(),
+                    13 => self.toggle_auto_break(),
+                    14 => self.toggle_idle_focus_bar(),
+                    15 => self.toggle_day_line(),
+                    16 => self.toggle_idle_cycle(),
+                    17 => self.toggle_state_dot(),
+                    18 => self.toggle_peek(),
+                    _ => self.toggle_scenes(),
+                }
+                self.render();
+            }
+            Act::CfgSet(g, v) => {
+                match g {
+                    0 => self.set_buddy(v),
+                    1 => self.set_idle_glance(v),
+                    2 => self.set_clock_style(v),
+                    3 => self.set_water_min([0u16, 30, 45, 60, 90][v.min(4) as usize]),
+                    4 => self.set_eye_min([0u16, 20, 30, 45][v.min(3) as usize]),
+                    5 => self.set_monitor(v),
+                    _ => self.set_lang(v),
+                }
+                self.settings_open = None;
+                self.clamp_settings_scroll();
+                self.render();
+            }
+            Act::CfgOpen(k) => {
+                self.settings_open = if self.settings_open == Some(k) { None } else { Some(k) };
+                self.clamp_settings_scroll();
+                self.render();
+            }
+            Act::CfgCat(c) => {
+                self.settings_cat = c.min(3);
+                self.settings_scroll = 0;
+                self.settings_open = None;
+                self.render();
+            }
+            Act::SettingsThumb => {
+                // grab: centre the thumb on the pointer, then follow it 1:1
+                let view = crate::ui::SET_VIEW;
+                let total = crate::ui::settings_height(self);
+                let track_h = view - 8.0;
+                let thumb_h = (track_h * view / total).max(20.0);
+                let ratio = ((total - view) / (track_h - thumb_h)).max(0.0);
+                let frac = ((self.cursor_y - crate::ui::CONTENT_Y - 4.0 - thumb_h / 2.0) / (track_h - thumb_h)).clamp(0.0, 1.0);
+                self.settings_scroll = (frac * self.settings_max() / 30.0).round() as usize * 30;
+                self.start_drag(Drag::SettingsV { y0: self.cursor_y, scroll0: self.settings_scroll as f32, ratio }, 0.0);
+                self.render();
+            }
+            Act::CfgAct(k) => {
+                match k {
+                    0 => sys::open("notepad.exe", &format!("\"{}\"", store::apps_path().display())),
+                    1 => self.reload_apps(),
+                    2 => sys::open(&store::data_dir().to_string_lossy(), ""),
+                    4 => self.toggle_tucked(),
+                    _ => sys::check_update(self.hwnd.0 as isize),
+                }
+                self.render();
+            }
             Act::GameClick => self.hub.click(),
             Act::GamePick(k) => {
                 self.hub.pick(k);
@@ -2032,19 +2147,14 @@ impl App {
         self.render();
     }
 
-    /// Restart / shut down only on a second click within a few seconds.
-    fn power_press(&mut self, k: u8) {
-        let armed = matches!(self.power_confirm, Some((p, t)) if p == k && t.elapsed().as_secs_f32() < 3.5);
-        if armed {
-            self.power_confirm = None;
-            if k == 1 {
-                sys::restart_pc();
-            } else {
-                sys::shutdown_pc();
-            }
-        } else {
-            self.power_confirm = Some((k, Instant::now()));
-        }
+    /// Largest Settings scroll offset in px; rows are 30 px tall, so it stays on the row grid.
+    fn settings_max(&self) -> f32 {
+        (crate::ui::settings_height(self) - crate::ui::SET_VIEW).max(0.0)
+    }
+
+    /// Keep the Settings scroll inside the content when a group collapses.
+    fn clamp_settings_scroll(&mut self) {
+        self.settings_scroll = (self.settings_scroll as f32).min(self.settings_max()) as usize;
     }
 
     fn after_timer_change(&mut self) {
