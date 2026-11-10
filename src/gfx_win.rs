@@ -549,15 +549,23 @@ fn make_fonts(dw: &IDWriteFactory) -> Result<(Fonts, Option<IDWriteFontFallback>
     }
 }
 
-/// Custom font fallback: characters the UI font cannot show (Chinese) go to
-/// 苹方-简 when it is installed, so Latin text can use Inter while Chinese
-/// stays in PingFang. Without the font or on any failure the system fallback
-/// is kept as before.
+/// Custom font fallback: Latin stays in Inter, Chinese characters use
+/// PingFang SC, and Japanese kana use a Japanese UI font. Without any of these
+/// fonts, or on any failure, the system fallback is kept as before.
 fn make_cjk_fallback(dw: &IDWriteFactory, base: PCWSTR) -> Option<IDWriteFontFallback> {
-    let target = [w!("PingFang SC"), w!("苹方-简")]
+    let cjk_target = [w!("PingFang SC"), w!("苹方-简")]
         .into_iter()
-        .find(|f| font_exists(dw, *f))?;
+        .find(|f| font_exists(dw, *f));
+    let kana_targets: Vec<PCWSTR> = [w!("Yu Gothic UI"), w!("Meiryo"), w!("Noto Sans JP")]
+        .into_iter()
+        .filter(|f| font_exists(dw, *f))
+        .collect();
+    if cjk_target.is_none() && kana_targets.is_empty() {
+        return None;
+    }
+
     // PingFang SC coverage: CJK punctuation, ideographs and fullwidth forms.
+    // Halfwidth katakana is handled by the Japanese mapping below.
     const CJK: &[(u32, u32)] = &[
         (0x3000, 0x303F),   // CJK symbols and punctuation
         (0x3400, 0x4DBF),   // CJK extension A
@@ -565,15 +573,24 @@ fn make_cjk_fallback(dw: &IDWriteFactory, base: PCWSTR) -> Option<IDWriteFontFal
         (0xF900, 0xFAFF),   // CJK compatibility ideographs
         (0x20000, 0x2A6DF), // extension B
         (0x2A700, 0x2EBEF), // extensions C-F
-        (0xFF00, 0xFFEF),   // halfwidth and fullwidth forms
+        (0xFF00, 0xFF65),   // fullwidth forms before halfwidth katakana
+        (0xFFA0, 0xFFEF),   // halfwidth Hangul and fullwidth signs
     ];
-    let ranges: Vec<DWRITE_UNICODE_RANGE> = CJK
-        .iter()
-        .map(|&(a, b)| DWRITE_UNICODE_RANGE {
-            first: a,
-            last: b,
-        })
-        .collect();
+    const KANA: &[(u32, u32)] = &[
+        (0x3040, 0x30FF),    // Hiragana and Katakana
+        (0x31F0, 0x31FF),    // Katakana Phonetic Extensions
+        (0xFF66, 0xFF9F),    // Halfwidth Katakana
+        (0x1AFF0, 0x1AFFF),  // Kana Extended-B
+        (0x1B000, 0x1B16F),  // Kana Supplement, Extended-A and Small Kana
+    ];
+    let ranges = |spec: &[(u32, u32)]| -> Vec<DWRITE_UNICODE_RANGE> {
+        spec.iter()
+            .map(|&(a, b)| DWRITE_UNICODE_RANGE {
+                first: a,
+                last: b,
+            })
+            .collect()
+    };
     unsafe {
         let Ok(dw2) = dw.cast::<IDWriteFactory2>() else {
             return None;
@@ -581,9 +598,23 @@ fn make_cjk_fallback(dw: &IDWriteFactory, base: PCWSTR) -> Option<IDWriteFontFal
         let Ok(builder) = dw2.CreateFontFallbackBuilder() else {
             return None;
         };
-        builder
-            .AddMapping(&ranges, &[target.as_ptr()], None, PCWSTR::null(), base, 1.0)
-            .ok()?;
+        let Ok(system) = dw2.GetSystemFontFallback() else {
+            return None;
+        };
+        if let Some(target) = cjk_target {
+            builder
+                .AddMapping(&ranges(CJK), &[target.as_ptr()], None, PCWSTR::null(), base, 1.0)
+                .ok()?;
+        }
+        if !kana_targets.is_empty() {
+            let targets: Vec<_> = kana_targets.iter().map(|f| f.as_ptr()).collect();
+            builder
+                .AddMapping(&ranges(KANA), &targets, None, PCWSTR::null(), base, 1.0)
+                .ok()?;
+        }
+        // Keep the system list as the last resort for characters not covered
+        // by the explicit Chinese and Japanese mappings above.
+        builder.AddMappings(&system).ok()?;
         builder.CreateFontFallback().ok()
     }
 }
