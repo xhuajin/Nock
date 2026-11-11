@@ -32,14 +32,14 @@ impl D2d<D2D1_COLOR_F> for Color {
     }
 }
 
-/// Platform-neutral names used by the rest of the app.
-pub type Font = IDWriteTextFormat;
+/// Name used by the rest of the app.
 #[allow(dead_code)]
 pub type Bitmap = ID2D1Bitmap;
 
 pub struct Fonts {
     pub title: IDWriteTextFormat,
     pub body: IDWriteTextFormat,
+    pub note: IDWriteTextFormat,
     pub small: IDWriteTextFormat,
     pub menu: IDWriteTextFormat,
     pub tiny: IDWriteTextFormat,
@@ -286,6 +286,22 @@ impl Gfx {
     }
 
     pub fn text(&self, s: &str, r: Rect, f: &IDWriteTextFormat, c: Color, align: Align) {
+        self.draw_text(s, r, f, c, align, false);
+    }
+
+    pub fn text_block(&self, s: &str, r: Rect, f: &IDWriteTextFormat, c: Color) {
+        self.draw_text(s, r, f, c, Align::Left, true);
+    }
+
+    fn draw_text(
+        &self,
+        s: &str,
+        r: Rect,
+        f: &IDWriteTextFormat,
+        c: Color,
+        align: Align,
+        multiline: bool,
+    ) {
         if s.is_empty() || c.3 <= 0.003 {
             return;
         }
@@ -297,6 +313,10 @@ impl Gfx {
             let Ok(layout) = self.dw.CreateTextLayout(&w, f, r.w, r.h) else {
                 return;
             };
+            if multiline {
+                let _ = layout.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+                let _ = layout.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+            }
             let _ = layout.SetTextAlignment(match align {
                 Align::Left => DWRITE_TEXT_ALIGNMENT_LEADING,
                 Align::Center => DWRITE_TEXT_ALIGNMENT_CENTER,
@@ -532,10 +552,17 @@ fn make_fonts(dw: &IDWriteFactory) -> Result<(Fonts, Option<IDWriteFontFallback>
             w!("Segoe UI")
         };
         let fallback = make_cjk_fallback(dw, ui);
+        // Use a family with native CJK coverage for both RichEdit and the note
+        // preview; otherwise GDI and DirectWrite choose different Chinese fonts.
+        let note = [w!("PingFang SC"), w!("苹方-简"), w!("Microsoft YaHei UI")]
+            .into_iter()
+            .find(|family| font_exists(dw, *family))
+            .unwrap_or(ui);
         Ok((
             Fonts {
                 title: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 17.0)?,
                 body: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
+                note: text(note, DWRITE_FONT_WEIGHT_NORMAL, 14.0)?,
                 small: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?,
                 menu: text(ui, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?,
                 tiny: text(ui, DWRITE_FONT_WEIGHT_NORMAL, 11.0)?,

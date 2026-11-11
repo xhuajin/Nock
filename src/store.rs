@@ -2,17 +2,13 @@
 //!   config.ini  – a few switches
 //!   apps.txt    – pinned launcher entries, one per line:  Name|target|optional args
 //!   todos.txt   – the to-do list, one per line:           0|text   (1 = done)
+//!   notes.txt   – versioned notes: id|timestamp|escaped title|escaped body
 
 use std::fs;
 use std::path::PathBuf;
 
 pub fn data_dir() -> PathBuf {
-    #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);
-    #[cfg(not(windows))]
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
     let base = base.unwrap_or_else(|| PathBuf::from("."));
     let d = base.join("Nock");
     // Settings from earlier working names are carried over once.
@@ -526,28 +522,155 @@ pub fn save_shelf(items: &[String]) {
     let _ = fs::write(data_dir().join("shelf.txt"), items.join("\n"));
 }
 
-/// Best scores of the four notch games (flight, bricks, slicer, run). The flying
-/// game's old single-score file is read once if the new one is missing.
-pub fn load_bests() -> [u32; 4] {
-    let text = fs::read_to_string(data_dir().join("games_best.txt")).unwrap_or_default();
-    let v: Vec<u32> = text.trim().split('|').filter_map(|p| p.parse().ok()).collect();
-    if v.len() == 4 {
-        [v[0], v[1], v[2], v[3]]
+pub const NOTES_FORMAT: &str = "NOCK_NOTES 1";
+pub const NOTE_MAX: usize = 100;
+pub const NOTE_TITLE_MAX: usize = 80;
+pub const NOTE_BODY_MAX: usize = 20_000;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Note {
+    pub id: u64,
+    /// Local epoch milliseconds of the last edit.
+    pub updated_at: i64,
+    pub title: String,
+    pub body: String,
+}
+
+pub fn notes_path() -> PathBuf {
+    data_dir().join("notes.txt")
+}
+
+/// A new stamp that stays unique even if several notes are created in one millisecond.
+pub fn new_note_id(existing: &[Note], now: i64) -> u64 {
+    let mut id = now.max(1) as u64;
+    while existing.iter().any(|n| n.id == id) {
+        id = id.wrapping_add(1).max(1);
+    }
+    id
+}
+
+/// The list title: an explicit title wins, then the body's first non-empty line.
+pub fn note_title(note: &Note) -> String {
+    let title = note.title.lines().next().unwrap_or("").trim();
+    if !title.is_empty() {
+        return truncate_chars(title, NOTE_TITLE_MAX);
+    }
+    let first = note
+        .body
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    if first.is_empty() {
+        "Untitled".to_string()
     } else {
-        [load_game_best(), 0, 0, 0]
+        truncate_chars(first, NOTE_TITLE_MAX)
     }
 }
 
-pub fn save_bests(b: &[u32; 4]) {
-    let _ = fs::write(data_dir().join("games_best.txt"), format!("{}|{}|{}|{}", b[0], b[1], b[2], b[3]));
+pub fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
-/// Best score of the notch mini game.
-pub fn load_game_best() -> u32 {
-    fs::read_to_string(data_dir().join("game_best.txt"))
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+pub fn note_is_empty(note: &Note) -> bool {
+    note.title.trim().is_empty() && note.body.trim().is_empty()
+}
+
+fn escape_note(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('|', "\\p")
+}
+
+fn unescape_note(s: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        out.push(match chars.next()? {
+            '\\' => '\\',
+            'n' => '\n',
+            'r' => '\r',
+            'p' => '|',
+            _ => return None,
+        });
+    }
+    Some(out)
+}
+
+pub fn notes_to_text(notes: &[Note]) -> String {
+    let mut out = format!("{NOTES_FORMAT}\n");
+    for n in notes.iter().take(NOTE_MAX) {
+        out.push_str(&format!(
+            "{}|{}|{}|{}\n",
+            n.id,
+            n.updated_at,
+            escape_note(&n.title),
+            escape_note(&n.body)
+        ));
+    }
+    out
+}
+
+pub fn notes_from_text(text: &str) -> Vec<Note> {
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some(NOTES_FORMAT) {
+        return Vec::new();
+    }
+    let mut notes = Vec::new();
+    for line in lines {
+        let mut fields = line.splitn(4, '|');
+        let (Some(id), Some(stamp), Some(title), Some(body)) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let (Ok(id), Ok(updated_at), Some(title), Some(body)) =
+            (id.parse(), stamp.parse(), unescape_note(title), unescape_note(body))
+        else {
+            continue;
+        };
+        if id == 0 || (title.trim().is_empty() && body.trim().is_empty()) {
+            continue;
+        }
+        notes.push(Note { id, updated_at, title, body });
+    }
+    notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| b.id.cmp(&a.id)));
+    notes.truncate(NOTE_MAX);
+    notes
+}
+
+pub fn load_notes() -> Vec<Note> {
+    fs::read_to_string(notes_path())
+        .map(|text| notes_from_text(&text))
+        .unwrap_or_default()
+}
+
+/// Write through a sibling temporary file so an interrupted save leaves the previous notes intact.
+pub fn save_notes(notes: &[Note]) -> std::io::Result<()> {
+    let path = notes_path();
+    let tmp = path.with_extension("txt.tmp");
+    fs::write(&tmp, notes_to_text(notes))?;
+    fs::rename(tmp, path)
+}
+/// Remove score files left by the retired arcade.
+/// The data folder is user-owned, so only these two known files are touched.
+pub fn remove_legacy_game_scores() {
+    for name in ["games_best.txt", "game_best.txt"] {
+        let path = data_dir().join(name);
+        if path.is_file() {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 pub fn save_todos(todos: &[Todo]) {

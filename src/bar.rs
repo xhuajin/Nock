@@ -161,6 +161,9 @@ impl App {
                 }
             }
             let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+            if self.note_editor_visible() && !self.note_host.is_invalid() {
+                let _ = SetWindowPos(self.note_host, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+            }
         }
     }
 

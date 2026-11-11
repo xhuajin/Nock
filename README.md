@@ -16,32 +16,32 @@ Written in Rust. No webview, no framework, no runtime. One small <code>.exe</cod
 
 <p align="center"><img src="docs/demo.gif" width="760" alt="Nock demo: the notch opens, every tab is shown, then the Wi-Fi and Bluetooth dropdowns, the buddy, a scene and the tray menu"></p>
 
-<p align="center"><a href="https://github.com/Akhilesh-Varute/Nock/releases/latest"><b>â¬‡ Download for Windows 10/11</b></a> &nbsp;Â·&nbsp; free, MIT, about 1 MB &nbsp;Â·&nbsp; <a href="https://www.producthunt.com/products/nock-2">Nock on Product Hunt</a> &nbsp;Â·&nbsp; <a href="https://youtu.be/rGcVKVOOf6A">Watch the video</a></p>
+<p align="center"><a href="https://github.com/Akhilesh-Varute/Nock/releases/latest"><b>â¬?Download for Windows 10/11</b></a> &nbsp;Â·&nbsp; free, MIT, about 1 MB &nbsp;Â·&nbsp; <a href="https://www.producthunt.com/products/nock-2">Nock on Product Hunt</a> &nbsp;Â·&nbsp; <a href="https://youtu.be/rGcVKVOOf6A">Watch the video</a></p>
 
-> **Actively developed.** Nock is young and still being tested on more PCs, so you may hit rough edges. Bug reports and ideas are very welcome: [open an issue](../../issues). A **Linux preview** is available: see [Linux](#linux-preview).
+> **Actively developed.** Nock is young and still being tested on more PCs, so you may hit rough edges. Bug reports and ideas are very welcome: [open an issue](../../issues).
 
 ## Features
 
 - **Notch** at the top centre. Click it and a panel opens with tabs: **Media**, **Controls**, **Today** (focus timer, to-dos, calendar), **Stats**, **Clipboard**, **Shelf** (drop files on it), **Apps**, **Games** and **Power**.
 - **Top bar** along the top of the screen: active app name, Wi-Fi, Bluetooth, sound, brightness, battery and clock, each with a dropdown (join Wi-Fi networks, connect Bluetooth devices, sliders, calendar). Optional clock styles and a CPU / memory read-out.
 - **A little life**: a buddy character on the bar, scripted scenes, an arcade with four mouse-only games, and small reactions on the pill (squish on click, glow with the music, confetti when the timer ends).
-- **Smart pill**: the notch tells you things without a click. Amber "Battery low" with time left, "Mic on" with the time and a click-to-mute mic icon, "Link / Path / Colour / Code copied" (click a link or path to open it), a break nudge after 90 minutes of steady use, and meeting countdowns from your calendar. Tray â†’ *Smart hints* turns it off. See [Smart pill](#smart-pill).
+- **Smart pill**: the notch tells you things without a click. Amber "Battery low" with time left, "Mic on" with the time and a click-to-mute mic icon, "Link / Path / Colour / Code copied" (click a link or path to open it), a break nudge after 90 minutes of steady use, and meeting countdowns from your calendar. Tray â†?*Smart hints* turns it off. See [Smart pill](#smart-pill).
 - **Idle notch extras** (all optional): a small glance next to the clock (tasks left, focus minutes today, CPU and RAM, or your next meeting), a thin focus progress line while a timer runs, a workday progress line, and scroll-up paging. Only the focus line is on by default, and it only shows while a focus session runs. See [Idle notch](#idle-notch).
 - **Gentle reminders** (all off by default): drink water, and look away from the screen (20-20-20).
-- **Zero idle cost**: event driven, no polling loop; about 0% CPU and about 32 MB of memory while idle (see [Why it is light](#why-it-is-light)). Hides itself in full-screen video and games, with a top-edge reveal. Tray â†’ *Auto-hide* keeps it out of sight all the time until the pointer touches the top-centre edge. Tray â†’ *Fade out when a window covers it* (off by default) fades the notch out while any window sits under it, for example one you drag across the top, and fades it back in when the window moves away.
+- **Zero idle cost**: event driven, no polling loop; about 0% CPU and about 32 MB of memory while idle (see [Why it is light](#why-it-is-light)). Hides itself in full-screen video and games, with a top-edge reveal. Tray â†?*Auto-hide* keeps it out of sight all the time until the pointer touches the top-centre edge. Tray â†?*Fade out when a window covers it* (off by default) fades the notch out while any window sits under it, for example one you drag across the top, and fades it back in when the window moves away.
 - Follows the Windows light/dark theme.
 
 ## Install
 
-Download **`NockSetup-<version>.exe`** from the [latest release](../../releases/latest) and run it. It installs just for you (no admin rights), adds Nock to the Start menu so you can find it by searching "Nock", and can start it with Windows. Uninstall it from Windows Settings â†’ Apps like any other app.
+Download **`NockSetup-<version>.exe`** from the [latest release](../../releases/latest) and run it. It installs just for you (no admin rights), adds Nock to the Start menu so you can find it by searching "Nock", and can start it with Windows. Uninstall it from Windows Settings â†?Apps like any other app.
 
-Nock is not code-signed yet, so Windows may show a "Windows protected your PC" note (**More info â†’ Run anyway**), and a PC with Smart App Control on may block it outright. See [Smart App Control](#windows-says-smart-app-control-blocked-an-app) for the fix.
+Nock is not code-signed yet, so Windows may show a "Windows protected your PC" note (**More info â†?Run anyway**), and a PC with Smart App Control on may block it outright. See [Smart App Control](#windows-says-smart-app-control-blocked-an-app) for the fix.
 
-Prefer no installer? The same release also has **`Nock-portable-<version>.exe`**: put it in a folder you will keep and run it. (Nock adds its own Start menu shortcut when it runs, so search finds it either way; tray â†’ *Show in Start menu and search* turns that off.)
+Prefer no installer? The same release also has **`Nock-portable-<version>.exe`**: put it in a folder you will keep and run it. (Nock adds its own Start menu shortcut when it runs, so search finds it either way; tray â†?*Show in Start menu and search* turns that off.)
 
-Right-click the tray icon â†’ **Start with Windows** to launch it at login.
+Right-click the tray icon â†?**Start with Windows** to launch it at login.
 
-**Updates:** right-click the tray icon â†’ **Check for updates**. If a newer release exists Nock offers to update; for a copy installed with the installer it downloads the new installer, runs it silently and restarts itself. The portable file can update itself too: *Yes* downloads the new `Nock-portable-<version>.exe`, replaces itself and restarts; *No* opens the download page. It only checks when you click, never in the background.
+**Updates:** right-click the tray icon â†?**Check for updates**. If a newer release exists Nock offers to update; for a copy installed with the installer it downloads the new installer, runs it silently and restarts itself. The portable file can update itself too: *Yes* downloads the new `Nock-portable-<version>.exe`, replaces itself and restarts; *No* opens the download page. It only checks when you click, never in the background.
 
 ## Build
 
@@ -57,41 +57,11 @@ Right-click the tray icon â†’ **Start with Windows** to launch it at login.
 
 To build the installer yourself, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run `ISCC.exe /DMyAppVersion=1.2.3 installer\nock.iss` after the release build. The release workflow does this on every version tag.
 
-## Linux (preview)
-
-Nock also runs on Linux, drawn with the same code as the Windows version. It is a **preview**: every tab and the top bar work, but it has had far less testing than the Windows build, and it is not code-signed or in any package repository yet.
-
-**Install** (Debian, Ubuntu and friends): download `nock_<version>_amd64.deb` from the [latest release](../../releases/latest) and run `sudo apt install ./nock_<version>_amd64.deb`. Or download `nock-<version>-x86_64-linux.tar.gz`, unpack it and run `./install.sh` (add `--autostart` to start it at login, `--uninstall` to remove it). It installs just for you, no root needed.
-
-**Needs** an X11 session (or Wayland through XWayland, which is how most desktops run it) and the DejaVu Sans font (`fonts-dejavu-core`). Nock uses these tools when they are installed and quietly hides the matching item when they are not:
-
-| Feature | Tool |
-|---|---|
-| Wi-Fi dropdown | `nmcli` (NetworkManager) |
-| Bluetooth dropdown | `bluetoothctl` (BlueZ) |
-| Volume | `wpctl` (PipeWire) or `pactl` (PulseAudio) |
-| Brightness | `brightnessctl` |
-| Focused app name in the bar, auto-paste from Clipboard | `xdotool` |
-| Cover art from the web | `curl` |
-| Screenshot tile | `gnome-screenshot`, `spectacle`, `flameshot` or `scrot` |
-
-Now playing works with any MPRIS player (Spotify, browsers, VLC, mpv). Settings and data live in `~/.local/share/Nock`.
-
-**Not in the Linux preview yet:** game sound effects, the smart pill alerts (low battery, mic on, copied-link hints, meeting countdowns), reminders, the tray menu and the buddy and scenes. Idle cost is low but not zero like on Windows: the clipboard, the player and the bar are checked once every one to ten seconds, because X11 has no cheap change events for them. The notch needs X11 window hints, so on a pure Wayland session without XWayland it will not start.
-
-**Build from source:**
-
-```
-sudo apt install build-essential fonts-dejavu-core
-cargo build --release
-packaging/linux/package.sh        # optional: builds the .deb and the tarball
-```
-
 ## Tip: auto-hide the Windows taskbar
 
 Nock works best with the Windows taskbar set to hide itself. The bar and notch then take over the top of the screen, the taskbar slides up only when you move the pointer to the bottom edge, and the whole screen feels like one clean desktop.
 
-Settings â†’ Personalization â†’ Taskbar â†’ Taskbar behaviors â†’ **Automatically hide the taskbar** (on Windows 10: right-click the taskbar â†’ Taskbar settings â†’ *Automatically hide the taskbar in desktop mode*).
+Settings â†?Personalization â†?Taskbar â†?Taskbar behaviors â†?**Automatically hide the taskbar** (on Windows 10: right-click the taskbar â†?Taskbar settings â†?*Automatically hide the taskbar in desktop mode*).
 
 ## Using it
 
@@ -107,7 +77,7 @@ Settings â†’ Personalization â†’ Taskbar â†’ Taskbar behaviors â†’ **Automatical
 | Mouse wheel over the tab row | Switches pages |
 | `Ctrl+Backspace` in a text box | Deletes a whole word (to-do box, app search, clipboard search) |
 | Drag a file onto the notch | Opens the **Shelf** tab and keeps the file there; drag it back out into any program |
-| `Ctrl+Alt+H` / tray â†’ *Hide notch* | Tucks the notch away completely; press again (or `Ctrl+Alt+N`, or click the tray icon) to bring it back |
+| `Ctrl+Alt+H` / tray â†?*Hide notch* | Tucks the notch away completely; press again (or `Ctrl+Alt+N`, or click the tray icon) to bring it back |
 | Tray icon | All the settings below |
 
 The pill itself reacts: it squishes when you click it, does a quick squash-and-stretch when the pointer arrives, the active tab's highlight slides between tabs, hover highlights fade in and out, animation is paced to your screen's refresh rate, glows with the music (following the real output level), gives a heartbeat flash when you copy a link, and bursts into confetti when the focus timer ends.
@@ -117,7 +87,7 @@ The pill itself reacts: it squishes when you click it, does a quick squash-and-s
 - **Media**: artwork, title, artist, source app, seekable progress bar, previous / play-pause / next. Reads Windows' own media session, so it works with Spotify, YouTube and other browser media, VLC, Apple Music and so on. While music plays, the collapsed pill shows the artwork, track and equaliser bars. Press previous or next and the old track stays up with a spinner and "Loading next track" until the player has the new one, instead of flashing "Nothing playing".
 - **Controls**: shortcuts to **Screenshot** (Snipping Tool) and the Windows Settings pages people look for: **Display**, **Sound**, **Network**, **Power & battery** and **All settings**. (Wi-Fi, Bluetooth, volume and brightness are in the top bar.)
 - **Today**: three cards.
-  - *Focus timer*: 5 / 15 / 25 / 50 minute presets, or the pencil to type any number of minutes. Hover a to-do and click its â–¶ to start a session on that task (the timer shows the task's name). A line under the timer shows today's focus minutes and tasks done. With *Auto break after focus* on (tray), a 5 minute break follows each session, then focus again. When a timer finishes you get three beeps, confetti, and the pill pulses "Time's up" for 30 s (or until you click it); the Quidditch scene celebrates if scenes are on.
+  - *Focus timer*: 5 / 15 / 25 / 50 minute presets, or the pencil to type any number of minutes. Hover a to-do and click its â–?to start a session on that task (the timer shows the task's name). A line under the timer shows today's focus minutes and tasks done. With *Auto break after focus* on (tray), a 5 minute break follows each session, then focus again. When a timer finishes you get three beeps, confetti, and the pill pulses "Time's up" for 30 s (or until you click it); the Quidditch scene celebrates if scenes are on.
   - *To-do*: a 5-item list, saved to disk.
   - *Calendar*: the current month.
 - **Stats**: CPU and memory bars that glide to each new value (with a CPU history), battery with charging state, and uptime. It samples once a second, only while this tab is open.
@@ -142,15 +112,15 @@ A thin translucent bar runs along the top of the screen and the notch hangs from
 - **Battery**: percentage, charging state, time left, battery saver, link to battery settings.
 - **Date and time**: month calendar with today highlighted.
 
-**Connecting feedback:** while a Wi-Fi or Bluetooth connection is in progress the bar icon pulses and the row shows a spinner. When it finishes a small note says "Connected to â€¦" or "Couldn't connect â€¦".
+**Connecting feedback:** while a Wi-Fi or Bluetooth connection is in progress the bar icon pulses and the row shows a spinner. When it finishes a small note says "Connected to â€? or "Couldn't connect â€?.
 
 **Hover tooltips:** resting the pointer on the Wi-Fi or Bluetooth icon shows what is connected (network name and signal; connected Bluetooth devices) without clicking.
 
-**Clock style** (tray â†’ *Clock style*): digital (default), analog, binary, or "hours until Friday". **24-hour clock** (tray â†’ *24-hour clock*, or `clock_24h=1`) shows 13:05 instead of 1:05 PM on the bar, the pill and the clock pop-up.
+**Clock style** (tray â†?*Clock style*): digital (default), analog, binary, or "hours until Friday". **24-hour clock** (tray â†?*24-hour clock*, or `clock_24h=1`) shows 13:05 instead of 1:05 PM on the bar, the pill and the clock pop-up.
 
-**CPU and memory** (tray â†’ *CPU and memory on the bar*): a small `CPU 12%  RAM 63%` read-out, off by default.
+**CPU and memory** (tray â†?*CPU and memory on the bar*): a small `CPU 12%  RAM 63%` read-out, off by default.
 
-A dropdown closes when the pointer leaves it, when you click into another window, or when you click its icon again. The bar follows the Windows light/dark setting; the notch itself always stays black. It reserves its space like the taskbar does, so maximised windows start below it. Tray â†’ *Top bar* turns it off (the old notch-only behaviour returns); `top_bar` in `config.ini` does the same.
+A dropdown closes when the pointer leaves it, when you click into another window, or when you click its icon again. The bar follows the Windows light/dark setting; the notch itself always stays black. It reserves its space like the taskbar does, so maximised windows start below it. Tray â†?*Top bar* turns it off (the old notch-only behaviour returns); `top_bar` in `config.ini` does the same.
 
 ### Reminders
 
@@ -167,26 +137,26 @@ The collapsed notch changes with what is going on, all from local rules (no AI, 
 - **Microphone**: while an app is using the microphone the pill shows *Mic on* and for how long. Click the mic icon to mute or unmute the default microphone (it turns red). This is Windows' own mute, so it works for any call app.
 - **Copied**: a link, file path, `#hex` colour or short numeric code you copy shows a hint for a few seconds. Click the pill during a link or path hint to open it (a path opens Explorer with the file selected).
 - **Breaks**: after 90 minutes of keyboard and mouse use without a 5 minute gap, it suggests a break.
-- **Meetings**: put a read-only calendar link in `calendar_url=` in `config.ini` (Google Calendar: Settings â†’ your calendar â†’ *Secret address in iCal format*; Outlook: a published calendar). Five minutes before a meeting the pill shows its name and a countdown; click it to open the Zoom, Meet, Teams or Webex link in the event. Daily and weekly repeats work; monthly rules and `COUNT` do not. **This is the one thing that uses the network in the background**: with a link set, Nock fetches it at start and about once an hour. Leave it empty and Nock never does.
+- **Meetings**: put a read-only calendar link in `calendar_url=` in `config.ini` (Google Calendar: Settings â†?your calendar â†?*Secret address in iCal format*; Outlook: a published calendar). Five minutes before a meeting the pill shows its name and a countdown; click it to open the Zoom, Meet, Teams or Webex link in the event. Daily and weekly repeats work; monthly rules and `COUNT` do not. **This is the one thing that uses the network in the background**: with a link set, Nock fetches it at start and about once an hour. Leave it empty and Nock never does.
 
-The important ones (meetings, low battery, break) glow in a strong colour and stay up for a minute or more (a meeting stays until it starts or you click it, and shows again in its last minute), because a small pill is easy to miss when you are focused. Tray â†’ *Chime for meeting, battery and break hints* (`smart_sound=1`, off by default) adds a short sound. Tray â†’ *Smart hints* (`smart=0` in `config.ini`) turns all of these off.
+The important ones (meetings, low battery, break) glow in a strong colour and stay up for a minute or more (a meeting stays until it starts or you click it, and shows again in its last minute), because a small pill is easy to miss when you are focused. Tray â†?*Chime for meeting, battery and break hints* (`smart_sound=1`, off by default) adds a short sound. Tray â†?*Smart hints* (`smart=0` in `config.ini`) turns all of these off.
 
 ## Idle notch
 
 When the collapsed notch shows only the clock, it can show a little more. Everything here is optional and costs nothing while idle: each piece is drawn only when its data changes, and nothing polls. The usual hints (low battery, mic, copied, break, meetings, "Time's up", music) always take over the notch.
 
-- **Idle glance** (tray â†’ *Idle glance*, `idle_glance`): one extra next to the clock, after a thin separator. `0` off (default), `1` tasks left (an unfinished-to-do count such as "3 left", hidden when the list is empty), `2` focus minutes today, `3` CPU and RAM (uses the same 3 s sampling as the bar read-out, only while selected), `4` next meeting, such as "Standup 10:30", dimmer than the others. The next meeting shows only meetings starting within `idle_meeting_hours` (1 to 12, default 3), reads the same calendar link as the meeting hints (so it needs `calendar_url` and Smart hints on) and never fetches more often than they do.
-- **Focus progress line** (tray â†’ *Show focus progress on the notch*, `idle_focus_bar`, on by default): a 2 px line along the bottom of the notch while a focus session runs, in blue (teal during an auto break).
-- **Workday progress line** (tray â†’ *Workday progress line on the notch*, `day_line`, off by default): a thin grey line showing how much of your workday has passed, between `day_start` and `day_end` (hours, defaults 9 and 18). It is hidden outside those hours and while a focus session runs, and updates with the clock's once-a-minute redraw.
-- **Scroll up to cycle** (tray â†’ *Scroll up over the notch cycles time, date, tasks*, `idle_cycle`, off by default): scrolling up over the idle notch steps through time only, date, tasks left and focus today, with four small page dots for two seconds. Scrolling down still opens the panel.
-- **State dot** (tray â†’ *State dot on the notch*, `state_dot`, off by default): a small glyph at the left of the idle and timer notch whose shape, not just colour, tells the state: a steady blue dot when idle, a ring when the microphone is in use (red when muted), an amber square with a tick when the battery is low, and a progress arc while a focus session runs. It reads the state Nock already tracks and adds no probes. It is not drawn on the music pill, where the artwork sits.
-- **Buddy peeks** (tray â†’ *Buddy peeks over the notch now and then*, `peek`, off by default): every three to eight minutes the robot or kitty buddy rises over the bottom edge of the closed notch for about a second and a half, then slips away. It is scheduled with one long one-shot timer, only runs while the notch is visible, closed and showing the clock or a timer, never during a scene or in a full-screen app, and does nothing for the pixel buddies.
+- **Idle glance** (tray â†?*Idle glance*, `idle_glance`): one extra next to the clock, after a thin separator. `0` off (default), `1` tasks left (an unfinished-to-do count such as "3 left", hidden when the list is empty), `2` focus minutes today, `3` CPU and RAM (uses the same 3 s sampling as the bar read-out, only while selected), `4` next meeting, such as "Standup 10:30", dimmer than the others. The next meeting shows only meetings starting within `idle_meeting_hours` (1 to 12, default 3), reads the same calendar link as the meeting hints (so it needs `calendar_url` and Smart hints on) and never fetches more often than they do.
+- **Focus progress line** (tray â†?*Show focus progress on the notch*, `idle_focus_bar`, on by default): a 2 px line along the bottom of the notch while a focus session runs, in blue (teal during an auto break).
+- **Workday progress line** (tray â†?*Workday progress line on the notch*, `day_line`, off by default): a thin grey line showing how much of your workday has passed, between `day_start` and `day_end` (hours, defaults 9 and 18). It is hidden outside those hours and while a focus session runs, and updates with the clock's once-a-minute redraw.
+- **Scroll up to cycle** (tray â†?*Scroll up over the notch cycles time, date, tasks*, `idle_cycle`, off by default): scrolling up over the idle notch steps through time only, date, tasks left and focus today, with four small page dots for two seconds. Scrolling down still opens the panel.
+- **State dot** (tray â†?*State dot on the notch*, `state_dot`, off by default): a small glyph at the left of the idle and timer notch whose shape, not just colour, tells the state: a steady blue dot when idle, a ring when the microphone is in use (red when muted), an amber square with a tick when the battery is low, and a progress arc while a focus session runs. It reads the state Nock already tracks and adds no probes. It is not drawn on the music pill, where the artwork sits.
+- **Buddy peeks** (tray â†?*Buddy peeks over the notch now and then*, `peek`, off by default): every three to eight minutes the robot or kitty buddy rises over the bottom edge of the closed notch for about a second and a half, then slips away. It is scheduled with one long one-shot timer, only runs while the notch is visible, closed and showing the clock or a timer, never during a scene or in a full-screen app, and does nothing for the pixel buddies.
 
 The notch resizes with its usual squash-and-stretch when an extra appears or goes away.
 
 ## Windows says "Smart App Control blocked an app"
 
-Nock is not code-signed yet, so Windows 11 machines with **Smart App Control** switched on refuse to run it (the app is safe; Windows only blocks programs from publishers it doesn't know). Machines where it is off, which is most of them, only show the usual SmartScreen note ("Windows protected your PC"): click **More info â†’ Run anyway**. If Smart App Control is on, you can turn it off in Windows Security â†’ App & browser control â†’ Smart App Control settings, or build and run in a different environment. You can read all of the source here before running anything.
+Nock is not code-signed yet, so Windows 11 machines with **Smart App Control** switched on refuse to run it (the app is safe; Windows only blocks programs from publishers it doesn't know). Machines where it is off, which is most of them, only show the usual SmartScreen note ("Windows protected your PC"): click **More info â†?Run anyway**. If Smart App Control is on, you can turn it off in Windows Security â†?App & browser control â†?Smart App Control settings, or build and run in a different environment. You can read all of the source here before running anything.
 
 ## Buddy
 
@@ -197,15 +167,15 @@ A tiny original character lives on the top bar, in the free stretch between the 
 - **Follows your pointer** when you move it over that part of the bar, and its eyes follow the cursor. Click it to pet it.
 - **Cheers** when the focus timer ends, and says "Connected!" or "Oops" after a Wi-Fi / Bluetooth attempt, "Low battery" when the battery runs low, "Bedtime?" late at night, and your reminders.
 
-Pick the character from the tray menu â†’ **Buddy**: Robot (default, a bone-white little robot with a blue status light and equaliser bars on its chest) or Kitty, or Off. It is also the `buddy` setting in `config.ini` (0 = off, 2 cat, 5 robot, 6 ronin, 7 courier, 8 necromancer). The retired blob, bunny and hero (1, 3, 4) now show the robot. The characters are drawn from simple shapes in code, so there are no image files. It hides together with the bar in full screen.
+Pick the character from the tray menu â†?**Buddy**: Robot (default, a bone-white little robot with a blue status light and equaliser bars on its chest) or Kitty, or Off. It is also the `buddy` setting in `config.ini` (0 = off, 2 cat, 5 robot, 6 ronin, 7 courier, 8 necromancer). The retired blob, bunny and hero (1, 3, 4) now show the robot. The characters are drawn from simple shapes in code, so there are no image files. It hides together with the bar in full screen.
 
 ### Pixel characters
 
-Three more characters are drawn as detailed pixel art and **talk** in character as they stroll: **Ronin** (a rain-worn samurai: "Patience.", "One cut."), **Courier** (a neon hoverboard runner: "Delivery's late. Again.") and **Necromancer** ("Death is a pause."). Pick them in the tray menu â†’ **Buddy**. They also star in some of the scenes below.
+Three more characters are drawn as detailed pixel art and **talk** in character as they stroll: **Ronin** (a rain-worn samurai: "Patience.", "One cut."), **Courier** (a neon hoverboard runner: "Delivery's late. Again.") and **Necromancer** ("Death is a pause."). Pick them in the tray menu â†?**Buddy**. They also star in some of the scenes below.
 
 ### Scenes
 
-The first scene plays a minute or two after Nock starts, then one every few minutes (about every 5 by default; set `scene_min=` in `config.ini`), when there is room on the bar: the characters act out a short scripted story and then walk off while your buddy comes back. Each one is a random pick that never repeats the last, and only scenes that fit the free space are chosen. Play one right away from the tray menu â†’ **Scenes**, or turn the automatic ones off there (`scenes=0` in `config.ini`). Nothing runs between scenes.
+The first scene plays a minute or two after Nock starts, then one every few minutes (about every 5 by default; set `scene_min=` in `config.ini`), when there is room on the bar: the characters act out a short scripted story and then walk off while your buddy comes back. Each one is a random pick that never repeats the last, and only scenes that fit the free space are chosen. Play one right away from the tray menu â†?**Scenes**, or turn the automatic ones off there (`scenes=0` in `config.ini`). Nothing runs between scenes.
 
 <table>
 <tr>
@@ -246,11 +216,11 @@ The exe carries its own icon and file details (`assets/notch.ico`, embedded by `
 
 ## Files and settings
 
-Everything is in `%APPDATA%\Nock\` (tray â†’ *Open settings folder*). Most settings are in the tray menu; `config.ini` holds them too:
+Everything is in `%APPDATA%\Nock\` (tray â†?*Open settings folder*). Most settings are in the tray menu; `config.ini` holds them too:
 
 - `config.ini`: `hover_expand` (open on hover instead of click), `eq_animation` (animate the equaliser bars), `clock_24h`, `reserve_space` (keep a thin strip at the top so maximised windows sit below the notch), `top_bar`, `buddy`, `scenes`, `scene_min`, `stats` (CPU/RAM on the bar), `clock_style` (0 digital, 1 analog, 2 binary, 3 until Friday), `water_min` and `eye_min` (minutes between reminders, 0 = off), `auto_break`, `start_menu` (the Start menu shortcut), `fs_hide` (hide while a full-screen app or game is in front; also in the tray as *Hide in full-screen apps*), `auto_hide` (stay hidden until the pointer touches the top-centre edge; tray: *Auto-hide*), `smart_hide` (fade out while a window covers the notch; tray: *Fade out when a window covers it*), `smart` (the hints above), `calendar_url` (your calendar link, empty = off), and `auto_close` (close the open panel when the pointer leaves it or another window comes to the front; tray: *Close the panel when the pointer leaves*).
 - Idle notch keys in `config.ini`: `idle_glance` (0 off, 1 tasks left, 2 focus today, 3 CPU and RAM, 4 next meeting), `idle_focus_bar`, `idle_meeting_hours`, `day_line`, `day_start`, `day_end` and `idle_cycle`, `state_dot` and `peek` (see [Idle notch](#idle-notch)).
-- `apps.txt`: pinned launcher entries, one per line: `Name|target|optional arguments`. The Apps tab edits it for you (+ and Ã—), but you can edit it by hand too: the target can be an exe, folder, URL or `ms-settings:` link. After editing, use tray â†’ *Reload pinned apps*.
+- `apps.txt`: pinned launcher entries, one per line: `Name|target|optional arguments`. The Apps tab edits it for you (+ and Ã—), but you can edit it by hand too: the target can be an exe, folder, URL or `ms-settings:` link. After editing, use tray â†?*Reload pinned apps*.
 - `todos.txt`: the to-do list.
 - `pinned_clips.txt`: the clipboard items you starred.
 - `shelf.txt`: the files on the Shelf tab, one full path per line.
@@ -271,7 +241,7 @@ Everything is in `%APPDATA%\Nock\` (tray â†’ *Open settings folder*). Most setti
 | Threads / handles | 21 / about 600 |
 | Download | **about 1 MB** exe |
 
-It is a native Rust program with no web view and no background polling, so it avoids the browser engine (typically a few hundred MB) that Electron-style widgets carry. It is not a benchmark against any specific app, and numbers go up briefly while you use it: the panel redraws as you hover, an animated scene or game uses a little CPU while it plays, and Stats samples once a second while that tab is open. You can check your own numbers in Task Manager â†’ Details â†’ `nock.exe`.
+It is a native Rust program with no web view and no background polling, so it avoids the browser engine (typically a few hundred MB) that Electron-style widgets carry. It is not a benchmark against any specific app, and numbers go up briefly while you use it: the panel redraws as you hover, an animated scene or game uses a little CPU while it plays, and Stats samples once a second while that tab is open. You can check your own numbers in Task Manager â†?Details â†?`nock.exe`.
 
 - **Zero work while idle.** The process blocks in `GetMessage()`. There is no polling loop anywhere.
 - Timers exist only while needed: a ~60 fps animation timer only during expand/collapse and the small pill reactions; a 20 fps timer only for the equaliser bars and glow while music plays and the pill is collapsed; a 1 Hz timer only while the Stats tab is open, a focus timer runs, or the panel is open on a playing track; a 60 fps timer only while a game is being played; and a 3 s timer only if you turned on the CPU/RAM read-out. Reminders and the clock use single long timers. A 2 s one-shot exists only after you scroll the idle notch with scroll-up cycling on, a single long one-shot arms the next buddy peek only when peeks are on, and the 3 s sampling also runs while the CPU and RAM idle glance is selected.
@@ -287,7 +257,7 @@ It is a native Rust program with no web view and no background polling, so it av
 - Media controls only do what the playing app allows through Windows. Apple Music for Windows, for example, does not let other programs seek, so its progress bar is display-only, and its Previous button is greyed out whenever the app reports it as unavailable.
 - Wi-Fi and Bluetooth buttons in the top bar toggle the radio through the Windows Radios API. If Windows exposes no such radio (or denies access) the button opens the matching Settings page instead.
 - Brightness on laptop panels is set through the display driver directly (instant, follows the slider as you drag). If the driver does not offer that, it falls back to a slower WMI call through PowerShell.
-- The volume slider follows the Windows default output device. Apps routed to a different device under Settings â†’ Sound â†’ Volume mixer aren't affected.
+- The volume slider follows the Windows default output device. Apps routed to a different device under Settings â†?Sound â†?Volume mixer aren't affected.
 - *Sleep* uses the standard suspend call; if hibernation is enabled on your PC Windows may hibernate instead.
 - The calendar shows the month only (no events). There is no weather or notification peek.
 - The games are mouse only, because the notch never takes keyboard focus from your other apps. The to-do, search and timer boxes take typed characters only (no IME composition).

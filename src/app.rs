@@ -9,14 +9,16 @@ use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct2D::ID2D1Bitmap;
 use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Diagnostics::Debug::{Beep, MessageBeep};
+use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::gfx::*;
 use crate::media::{self, Cmd, MediaState};
 use crate::radio::{self, Kind, Radios, Req};
-use crate::store::{self, AppEntry, Config, Todo};
+use crate::store::{self, AppEntry, Config, Note, Todo};
 use crate::sys;
 
 // ------------------------------------------------------------------ layout
@@ -44,10 +46,12 @@ pub const SETTINGS_PAGES: [&str; 5] = [
     "ms-settings:",
 ];
 pub const CLIP_ROWS: usize = 5;
+/// Rows the Notes list shows at once.
+pub const NOTES_ROWS: usize = 5;
 
 /// Posted once per display refresh while something animates (see `pump`).
 pub const WM_FRAME: u32 = 0x8000 + 12; // WM_APP + 12
-
+pub const WM_NOTES_CHANGED: u32 = 0x8000 + 13; // WM_APP + 13
 /// Seconds a page cross-fade takes.
 const PAGE_FADE_S: f32 = 0.20;
 
@@ -110,7 +114,7 @@ const T_EDGE: usize = 8;
 const T_PEEK: usize = 9;
 const T_FSCHK: usize = 10;
 const T_STATS: usize = 18;
-const T_GAME: usize = 19;
+
 const T_WATER: usize = 20;
 const T_EYES: usize = 21;
 /// One-shot: hides the cycle page dots 2 s after the last scroll.
@@ -128,7 +132,7 @@ pub enum Page {
     Shelf,
     Apps,
     Tasks,
-    Game,
+    Notes,
     Stats,
     Settings,
 }
@@ -141,7 +145,7 @@ pub const PAGES: [Page; 9] = [
     Page::Clipboard,
     Page::Shelf,
     Page::Apps,
-    Page::Game,
+    Page::Notes,
     Page::Settings,
 ];
 
@@ -189,12 +193,11 @@ pub enum Act {
     CfgAct(u8),
     CfgCat(u8),
     SettingsThumb,
-    /// click inside the running game
-    GameClick,
-    /// pick a game on the arcade screen
-    GamePick(usize),
-    /// back to the arcade screen
-    GameBack,
+    /// Notes: add, select, or permanently delete the nth recent note
+    NoteAdd,
+    NoteSelect(usize),
+    NoteEdit,
+    NoteDelete(usize),
     TimerToggle,
     TimerReset,
     TodoToggle(usize),
@@ -210,6 +213,13 @@ pub enum Act {
 pub struct Hit {
     pub r: Rect,
     pub act: Act,
+}
+
+fn app_launch_on_release(pressed: Option<usize>, released: Option<Act>) -> Option<usize> {
+    match (pressed, released) {
+        (Some(i), Some(Act::Launch(j))) if i == j => Some(i),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -306,6 +316,8 @@ pub struct App {
     // input
     pub hits: Vec<Hit>,
     pub hot: Option<Act>,
+    /// Pressed app tile; its launch is committed only if the button is released on it.
+    app_press: Option<usize>,
     drag: Option<Drag>,
     /// CPU and memory percent for the top bar (when enabled)
     pub stats: Option<(u32, u32)>,
@@ -398,7 +410,7 @@ pub struct App {
     confetti_start: Option<Instant>,
     /// what the pill says while it pulses ("Time's up", "Drink water")
     pub alert_msg: &'static str,
-    pub hub: crate::games::Hub,
+
     /// Apps tab picker: open?, the installed apps (None while loading), search text, scroll
     pub picking: bool,
     pub app_list: Option<Vec<(String, String)>>,
@@ -414,15 +426,11 @@ pub struct App {
     /// live numbers for the Stats page
     pub stat_cpu: u32,
     pub stat_mem: u32,
-    stat_prev: (u64, u64),
     pub stat_hist: Vec<f32>,
-    /// pointer inside the open panel (logical px) and whether the button is held, for the games
+    /// pointer inside the open panel (logical px) and whether the button is held
     cursor_x: f32,
     cursor_y: f32,
     mouse_down: bool,
-    /// interval of the page animation timer (0 = off)
-    page_ms: u32,
-    game_last: Instant,
     prev_fg: HWND,
     /// Bluetooth device being connected/disconnected: (address, connect?, name).
     pub bt_busy: Option<(u64, bool, String)>,
@@ -430,6 +438,16 @@ pub struct App {
     pub link_phase: u32,
     /// Result of the last Wi-Fi/Bluetooth attempt, shown briefly: (which, text, ok).
     pub link_msg: Option<(crate::bar::BarAct, String, bool)>,
+    /// Notes tab: saved and currently edited notes, selected id, scroll, native editor
+    pub notes: Vec<Note>,
+    pub note_sel: Option<u64>,
+    pub note_scroll: usize,
+    pub note_delete_armed: Option<u64>,
+    pub note_delete_at: Option<Instant>,
+    pub note_editor: HWND,
+    pub note_host: HWND,
+    pub note_editing: bool,
+    note_editor_loading: bool,
     /// Wi-Fi password being typed in the dropdown.
     pub pw: Option<crate::pop::PwEntry>,
     pub pw_prev_fg: HWND,
@@ -505,6 +523,7 @@ impl App {
             sec_on: false,
             hits: Vec::new(),
             hot: None,
+            app_press: None,
             drag: None,
             stats: None,
             cpu_prev: (0, 0),
@@ -565,7 +584,7 @@ impl App {
             beat_start: None,
             confetti_start: None,
             alert_msg: "Time's up",
-            hub: crate::games::Hub::new(store::load_bests()),
+
             picking: false,
             app_list: None,
             app_loading: false,
@@ -576,17 +595,24 @@ impl App {
             spin_t: 0.0,
             stat_cpu: 0,
             stat_mem: 0,
-            stat_prev: (0, 0),
             stat_hist: Vec::new(),
             cursor_x: 0.0,
             cursor_y: 0.0,
             mouse_down: false,
-            page_ms: 0,
-            game_last: Instant::now(),
+
             prev_fg: HWND::default(),
             bt_busy: None,
             link_phase: 0,
             link_msg: None,
+            notes: store::load_notes(),
+            note_sel: None,
+            note_scroll: 0,
+            note_delete_armed: None,
+            note_delete_at: None,
+            note_editor: HWND::default(),
+            note_host: HWND::default(),
+            note_editing: false,
+            note_editor_loading: false,
             pw: None,
             pw_prev_fg: HWND::default(),
             buddy: None,
@@ -610,6 +636,7 @@ impl App {
         sys::watch_mic_sessions(hwnd.0 as isize);
         a.load_app_icons();
         a.load_shelf_icons();
+        store::remove_legacy_game_scores();
         a.snap_tab();
         let (w, h) = a.target_size();
         a.sw = Spring::new(w);
@@ -661,6 +688,413 @@ impl App {
             self.load_shelf_icons();
         }
         self.update_reserve();
+    }
+
+    // ------------------------------------------------------------------ notes --
+    // The body is a plain-text RichEdit child so Windows supplies IME, selection,
+    // clipboard and undo. Direct2D draws the page around it and the list beside it.
+
+    pub fn selected_note(&self) -> Option<&Note> {
+        let id = self.note_sel?;
+        self.notes.iter().find(|n| n.id == id)
+    }
+
+    pub fn selected_note_mut(&mut self) -> Option<&mut Note> {
+        let id = self.note_sel?;
+        self.notes.iter_mut().find(|n| n.id == id)
+    }
+
+    pub fn note_editor_visible(&self) -> bool {
+        self.note_editing
+            && self.expanded
+            && self.page == Page::Notes
+            && !self.hidden
+            && !self.tucked
+            && !self.note_editor.is_invalid()
+    }
+
+    pub fn note_sort(&mut self) {
+        self.notes.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+    }
+
+    pub fn note_delete_armed(&self, id: u64) -> bool {
+        self.note_delete_armed == Some(id)
+            && self
+                .note_delete_at
+                .is_some_and(|t| t.elapsed().as_secs_f32() < 3.0)
+    }
+
+    fn ensure_note_editor(&mut self) -> HWND {
+        if !self.note_editor.is_invalid() {
+            return self.note_editor;
+        }
+        let hinst: HINSTANCE = unsafe { GetModuleHandleW(None).unwrap_or_default().into() };
+        let host = unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                w!("NockWindow"),
+                w!(""),
+                WS_POPUP,
+                0,
+                0,
+                10,
+                10,
+                Some(self.hwnd),
+                None,
+                Some(hinst),
+                None,
+            )
+        };
+        let Ok(host) = host else {
+            return HWND::default();
+        };
+        let edit = match crate::note_edit::create(host, &self.gfx.fonts.note) {
+            Ok(edit) => edit,
+            Err(err) => {
+                sys::log_visibility(&format!("notes editor creation failed: {err}"));
+                unsafe {
+                    let _ = DestroyWindow(host);
+                }
+                return HWND::default();
+            }
+        };
+        unsafe {
+            let _ = SetWindowSubclass(edit, Some(note_editor_proc), 1, self.hwnd.0 as usize);
+        }
+        self.note_host = host;
+        self.note_editor = edit;
+        edit
+    }
+
+    fn note_editor_frame(&self) -> RECT {
+        let r = crate::ui::NOTE_EDITOR_RECT;
+        let x = r.x * self.scale;
+        let y = (crate::ui::CONTENT_Y + r.y) * self.scale;
+        let w = r.w * self.scale;
+        let h = r.h * self.scale;
+        RECT {
+            left: x.round() as i32,
+            top: y.round() as i32,
+            right: (x + w).round() as i32,
+            bottom: (y + h).round() as i32,
+        }
+    }
+
+    fn place_note_editor(&self) {
+        if self.note_host.is_invalid() || self.note_editor.is_invalid() {
+            return;
+        }
+        let r = self.note_editor_frame();
+        let mut p = POINT {
+            x: r.left,
+            y: r.top,
+        };
+        let w = r.right - r.left;
+        let h = r.bottom - r.top;
+        unsafe {
+            let _ = ClientToScreen(self.hwnd, &mut p);
+            let _ = SetWindowPos(
+                self.note_host,
+                Some(HWND_TOPMOST),
+                p.x,
+                p.y,
+                w,
+                h,
+                SWP_NOACTIVATE,
+            );
+            let _ = SetWindowPos(
+                self.note_editor,
+                None,
+                0,
+                0,
+                w,
+                h,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            );
+        }
+        crate::note_edit::layout(self.note_editor);
+    }
+
+    fn set_note_editor_text(&mut self, text: &str) {
+        let hwnd = self.ensure_note_editor();
+        if hwnd.is_invalid() {
+            return;
+        }
+        self.note_editor_loading = true;
+        crate::note_edit::set_text(hwnd, text);
+        self.note_editor_loading = false;
+    }
+
+    fn read_note_editor(&self) -> String {
+        if self.note_editor.is_invalid() {
+            return String::new();
+        }
+        crate::note_edit::text(self.note_editor)
+    }
+
+    fn show_note_editor(&mut self, show: bool) {
+        if self.note_editor.is_invalid() {
+            if !show {
+                return;
+            }
+            self.ensure_note_editor();
+        }
+        if self.note_editor.is_invalid() {
+            return;
+        }
+        if show {
+            self.place_note_editor();
+        }
+        unsafe {
+            let _ = ShowWindow(
+                self.note_host,
+                if show { SW_SHOWNOACTIVATE } else { SW_HIDE },
+            );
+            let _ = ShowWindow(self.note_editor, if show { SW_SHOW } else { SW_HIDE });
+        }
+        self.note_editing = show;
+    }
+
+    pub fn start_note_editing(&mut self) {
+        let Some(id) = self.note_sel else { return };
+        let Some(body) = self
+            .notes
+            .iter()
+            .find(|n| n.id == id)
+            .map(|n| n.body.clone())
+        else {
+            return;
+        };
+        if self.note_editing {
+            unsafe {
+                let _ = SetFocus(Some(self.note_editor));
+            }
+            return;
+        }
+        self.finish_entry(false, false);
+        unsafe {
+            self.prev_fg = GetForegroundWindow();
+        }
+        self.make_activatable(true);
+        self.show_note_editor(true);
+        if !self.note_editing {
+            self.make_activatable(false);
+            self.prev_fg = HWND::default();
+            return;
+        }
+        self.set_note_editor_text(&body);
+        unsafe {
+            let _ = SetForegroundWindow(self.note_host);
+            let _ = SetFocus(Some(self.note_editor));
+        }
+        self.kill_timer(T_LEAVE);
+        self.render();
+    }
+
+    fn sync_note_editor_from_store(&mut self) {
+        let Some(note) = self.selected_note() else {
+            return;
+        };
+        let body = note.body.clone();
+        if self.read_note_editor() != body {
+            self.set_note_editor_text(&body);
+        }
+    }
+
+    pub fn note_editor_changed(&mut self) {
+        if !self.note_editing || self.note_editor_loading {
+            return;
+        }
+        let text: String = self
+            .read_note_editor()
+            .chars()
+            .take(store::NOTE_BODY_MAX)
+            .collect();
+        let Some(note) = self.selected_note_mut() else {
+            return;
+        };
+        if note.body == text {
+            return;
+        }
+        note.body = text;
+        note.updated_at = crate::cal::now().0 * 1000;
+        self.note_sort();
+        self.save_notes_reported();
+        self.render();
+    }
+
+    pub fn finish_note_editing(&mut self, refocus: bool) -> bool {
+        if !self.note_editing {
+            return false;
+        }
+        let text: String = self
+            .read_note_editor()
+            .chars()
+            .take(store::NOTE_BODY_MAX)
+            .collect();
+        if let Some(note) = self.selected_note_mut() {
+            if note.body != text {
+                note.body = text;
+                note.updated_at = crate::cal::now().0 * 1000;
+            }
+        }
+        let empty = self.selected_note().is_some_and(store::note_is_empty);
+        if empty {
+            if let Some(id) = self.note_sel {
+                self.notes.retain(|n| n.id != id);
+            }
+        }
+        self.note_editing = false;
+        self.show_note_editor(false);
+        self.note_delete_armed = None;
+        self.note_delete_at = None;
+        if self
+            .note_sel
+            .is_some_and(|id| !self.notes.iter().any(|n| n.id == id))
+        {
+            self.note_sel = self.notes.first().map(|n| n.id);
+        }
+        self.note_sort();
+        self.save_notes_reported();
+        self.make_activatable(false);
+        if refocus && !self.prev_fg.0.is_null() {
+            unsafe {
+                let _ = SetForegroundWindow(self.prev_fg);
+            }
+        }
+        self.prev_fg = HWND::default();
+        self.hide_note_editor_if_unused();
+        self.render();
+        true
+    }
+
+    fn hide_note_editor_if_unused(&mut self) {
+        if !self.note_editor_visible() && !self.note_host.is_invalid() {
+            unsafe {
+                let _ = ShowWindow(self.note_host, SW_HIDE);
+            }
+        }
+    }
+
+    fn save_notes_reported(&mut self) {
+        if let Err(e) = store::save_notes(&self.notes) {
+            sys::log_visibility(&format!("notes save failed: {e}"));
+        }
+    }
+
+    fn create_note(&mut self) {
+        if self.notes.len() >= store::NOTE_MAX {
+            return;
+        }
+        if self.note_editing {
+            self.finish_note_editing(false);
+        }
+        if let Some(current) = self.selected_note().filter(|n| store::note_is_empty(n)) {
+            let id = current.id;
+            self.note_sel = Some(id);
+        } else {
+            let stamp = crate::cal::now().0 * 1000;
+            let id = store::new_note_id(&self.notes, stamp);
+            self.notes.push(Note {
+                id,
+                updated_at: stamp,
+                title: String::new(),
+                body: String::new(),
+            });
+            self.note_sort();
+            self.note_sel = Some(id);
+            self.note_scroll = 0;
+        }
+        self.note_delete_armed = None;
+        self.note_delete_at = None;
+        self.start_note_editing();
+    }
+
+    fn select_note(&mut self, i: usize) {
+        let Some(id) = self.notes.get(i).map(|n| n.id) else {
+            return;
+        };
+        if self.note_sel == Some(id) {
+            if self.note_editing {
+                self.start_note_editing();
+            } else {
+                self.start_note_editing();
+            }
+            return;
+        }
+        self.finish_note_editing(false);
+        self.note_sel = Some(id);
+        self.note_delete_armed = None;
+        self.note_delete_at = None;
+        self.note_scroll = i.saturating_sub(NOTES_ROWS - 1);
+        self.sync_note_editor_from_store();
+        self.start_note_editing();
+    }
+
+    fn delete_note(&mut self, i: usize) {
+        let Some(id) = self.notes.get(i).map(|n| n.id) else {
+            return;
+        };
+        if !self.note_delete_armed(id) {
+            self.note_delete_armed = Some(id);
+            self.note_delete_at = Some(Instant::now());
+            self.render();
+            return;
+        }
+        if self.note_editing && self.note_sel == Some(id) {
+            self.finish_note_editing(false);
+        }
+        self.notes.retain(|n| n.id != id);
+        if self.note_sel == Some(id) {
+            self.note_sel = self.notes.first().map(|n| n.id);
+        }
+        self.note_delete_armed = None;
+        self.note_delete_at = None;
+        self.note_scroll = self.note_scroll.min(self.notes.len().saturating_sub(1));
+        self.save_notes_reported();
+        self.sync_note_editor_from_store();
+        self.render();
+    }
+
+    pub fn note_editor_key(&mut self, key: u16) -> bool {
+        if key == VK_ESCAPE.0 {
+            self.finish_note_editing(true);
+            return true;
+        }
+        if key == VK_RETURN.0 {
+            let ctrl = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+            if ctrl {
+                self.finish_note_editing(true);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_note_host(&self, hwnd: HWND) -> bool {
+        !self.note_host.is_invalid() && hwnd == self.note_host
+    }
+
+    pub fn note_host_msg(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        match msg {
+            WM_COMMAND => {
+                let code = ((wp.0 >> 16) & 0xffff) as u16;
+                let child = HWND(lp.0 as *mut _);
+                if code == EN_CHANGE as u16 && child == self.note_editor {
+                    self.note_editor_changed();
+                }
+                LRESULT(0)
+            }
+            WM_CLOSE => {
+                self.finish_note_editing(true);
+                LRESULT(0)
+            }
+            _ => unsafe { DefWindowProcW(hwnd, msg, wp, lp) },
+        }
     }
 
     pub fn has_media(&self) -> bool {
@@ -949,26 +1383,6 @@ impl App {
             self.kill_timer(T_SEC);
             self.sec_on = false;
         }
-        // the mini game ticks at 60 Hz only while its tab is open
-        let want: u32 = if self.expanded && !self.hidden {
-            match self.page {
-                Page::Game if self.hub.is_playing() => 16,
-                Page::Stats => 1000,
-                Page::Apps if self.picking && (self.app_list.is_none() || self.app_loading) => 33,
-                _ => 0,
-            }
-        } else {
-            0
-        };
-        if want != self.page_ms {
-            if want == 0 {
-                self.kill_timer(T_GAME);
-            } else {
-                self.game_last = Instant::now();
-                self.set_timer(T_GAME, want);
-            }
-            self.page_ms = want;
-        }
         // keep the equaliser running (or not)
         if self.eq_active() && self.anim_ms == 0 {
             self.last_tick = Instant::now();
@@ -986,6 +1400,7 @@ impl App {
     // -------------------------------------------------------------- render --
 
     pub fn render(&mut self) {
+        self.hide_note_editor_if_unused();
         if self.hidden {
             return;
         }
@@ -1018,6 +1433,9 @@ impl App {
         let x = self.mon.left + (mon_w - pw) / 2;
         let y = self.mon.top;
         let _ = self.gfx.present(self.hwnd, x, y, pw, ph);
+        if self.note_editor_visible() {
+            self.place_note_editor();
+        }
     }
 
     // ----------------------------------------------------------- animation --
@@ -1091,7 +1509,6 @@ impl App {
                 }
             }
             T_PEEK => self.on_peek_tick(),
-            T_GAME => self.on_game_tick(),
             T_WATER => self.water_reminder(),
             T_EYES => self.eye_reminder(),
             T_BPEEK => self.on_peek_timer(),
@@ -1144,7 +1561,7 @@ impl App {
             }
             T_LEAVE => {
                 self.kill_timer(T_LEAVE);
-                if self.expanded && !self.pinned && self.entering.is_none() && self.drag.is_none() && !self.shelf_out && self.cfg.auto_close {
+                if self.expanded && !self.pinned && self.entering.is_none() && !self.note_editing && self.drag.is_none() && !self.shelf_out && self.cfg.auto_close {
                     self.set_expanded(false);
                 }
             }
@@ -1193,6 +1610,7 @@ impl App {
             }
         } else {
             self.page_t = 1.0;
+            self.finish_note_editing(false);
             self.finish_entry(false, false);
             self.drag = None;
             self.seek_frac = None;
@@ -1613,7 +2031,7 @@ impl App {
                 self.retarget();
             }
         }
-        if self.expanded && !self.pinned && self.entering.is_none() && self.drag.is_none() && !self.shelf_out && self.cfg.auto_close {
+        if self.expanded && !self.pinned && self.entering.is_none() && !self.note_editing && self.drag.is_none() && !self.shelf_out && self.cfg.auto_close {
             self.set_timer(T_LEAVE, 450);
         }
     }
@@ -1652,12 +2070,21 @@ impl App {
             self.set_expanded(true);
             return;
         }
+        self.app_press = None;
         if let Some(act) = self.hit_at(x, y) {
-            if let Act::ShelfItem(i) = act {
-                // a click opens the file, a drag takes it out: decided on release or move
-                self.shelf_press = Some((i, x, y));
-            } else {
-                self.do_act(act, x);
+            match act {
+                Act::Launch(i) => {
+                    // Launch only after the button is released on the same app tile.
+                    self.app_press = Some(i);
+                    unsafe {
+                        SetCapture(self.hwnd);
+                    }
+                }
+                Act::ShelfItem(i) => {
+                    // a click opens the file, a drag takes it out: decided on release or move
+                    self.shelf_press = Some((i, x, y));
+                }
+                _ => self.do_act(act, x),
             }
         } else if self.entering.is_some() {
             // clicking elsewhere inside the notch keeps the text box open
@@ -1667,8 +2094,18 @@ impl App {
         }
     }
 
-    pub fn on_lbutton_up(&mut self) {
+    pub fn on_lbutton_up(&mut self, px: i32, py: i32) {
+        let (x, y) = (px as f32 / self.scale, py as f32 / self.scale);
         self.mouse_down = false;
+        if let Some(pressed) = self.app_press.take() {
+            unsafe {
+                let _ = ReleaseCapture();
+            }
+            if let Some(i) = app_launch_on_release(Some(pressed), self.hit_at(x, y)) {
+                self.do_act(Act::Launch(i), x);
+                return;
+            }
+        }
         if let Some((i, ..)) = self.shelf_press.take() {
             self.shelf_open(i);
             return;
@@ -1748,6 +2185,14 @@ impl App {
                 self.clip_scroll = self.clip_scroll.saturating_sub(1);
             }
             self.render();
+        } else if self.page == Page::Notes {
+            let max = self.notes.len().saturating_sub(NOTES_ROWS);
+            if delta < 0 {
+                self.note_scroll = (self.note_scroll + 1).min(max);
+            } else {
+                self.note_scroll = self.note_scroll.saturating_sub(1);
+            }
+            self.render();
         } else if self.page == Page::Settings {
             let max = self.settings_max() as usize;
             self.settings_scroll = if delta < 0 {
@@ -1764,6 +2209,7 @@ impl App {
             return;
         }
         self.finish_entry(false, false);
+        self.finish_note_editing(false);
         self.prev_page = self.page;
         self.page = p;
         self.page_t = if self.expanded { 0.0 } else { 1.0 };
@@ -2101,54 +2547,14 @@ impl App {
                 }
                 self.render();
             }
-            Act::GameClick => self.hub.click(),
-            Act::GamePick(k) => {
-                self.hub.pick(k);
-                self.sync_timers();
-            }
-            Act::GameBack => {
-                self.hub.back();
-                self.sync_timers();
-            }
-            Act::TimerCustom => {
-                self.start_entry();
+            Act::NoteAdd => self.create_note(),
+            Act::NoteSelect(i) => self.select_note(i),
+            Act::NoteEdit => self.start_note_editing(),
+            Act::NoteDelete(i) => self.delete_note(i),
+            Act::TimerCustom => {                self.start_entry();
                 self.entry_timer = self.entering.is_some();
             }
         }
-    }
-
-    fn on_game_tick(&mut self) {
-        let now = Instant::now();
-        let dt = now.duration_since(self.game_last).as_secs_f32().min(0.05);
-        self.game_last = now;
-        self.spin_t += dt;
-        match self.page {
-            Page::Game => {
-                let ox = (EXP_W - crate::game::W) / 2.0;
-                let inp = crate::games::Input { x: self.cursor_x - ox, y: self.cursor_y - 14.0 - crate::ui::CONTENT_Y, down: self.mouse_down };
-                let out = self.hub.step(dt, &inp);
-                if out.new_best {
-                    store::save_bests(&self.hub.best);
-                }
-                play_sfx(out.sfx);
-            }
-            Page::Stats => {
-                let (idle, total) = sys::cpu_times();
-                if self.stat_prev != (0, 0) {
-                    let (di, dt) = (idle.wrapping_sub(self.stat_prev.0), total.wrapping_sub(self.stat_prev.1));
-                    self.stat_cpu = if dt == 0 { 0 } else { (100 - (di.min(dt) * 100 / dt)) as u32 };
-                }
-                self.stat_prev = (idle, total);
-                self.stat_mem = sys::mem_percent();
-                self.stat_hist.push(self.stat_cpu as f32 / 100.0);
-                if self.stat_hist.len() > 40 {
-                    self.stat_hist.remove(0);
-                }
-                self.retarget(); // the bars glide to the new values
-            }
-            _ => {}
-        }
-        self.render();
     }
 
     /// Largest Settings scroll offset in px; rows are 30 px tall, so it stays on the row grid.
@@ -2514,7 +2920,7 @@ impl App {
         if !self.cfg.smart_hide || self.expanded || w.is_invalid() || w == self.hwnd {
             return false;
         }
-        if self.is_bar(w) || self.is_pop(w) || self.is_buddy(w) || self.is_stage(w) {
+        if self.is_bar(w) || self.is_pop(w) || self.is_buddy(w) || self.is_stage(w) || self.is_note_host(w) {
             return false;
         }
         unsafe {
@@ -2803,7 +3209,10 @@ impl App {
         // Never hide because of our own window (typing a task makes us the
         // foreground window), and never hide while a task is being typed.
         let fgw = unsafe { GetForegroundWindow() };
-        let ours = fgw == self.hwnd || self.pop.as_ref().map(|p| p.hwnd) == Some(fgw);
+        let ours = fgw == self.hwnd || self.is_note_host(fgw) || self.pop.as_ref().map(|p| p.hwnd) == Some(fgw);
+        if !ours && !fgw.is_invalid() {
+            self.finish_note_editing(false);
+        }
         self.smart_hit = self.overlaps_notch(fgw);
         let kind = if self.tucked || ours || self.entering.is_some() {
             0
@@ -2815,7 +3224,7 @@ impl App {
         } else if !self.cfg.fs_hide {
             0
         } else {
-            sys::fullscreen_kind(&[self.hwnd, self.bar.as_ref().map(|b| b.hwnd).unwrap_or_default(), self.pop.as_ref().map(|p| p.hwnd).unwrap_or_default()], &self.mon)
+            sys::fullscreen_kind(&[self.hwnd, self.note_host, self.bar.as_ref().map(|b| b.hwnd).unwrap_or_default(), self.pop.as_ref().map(|p| p.hwnd).unwrap_or_default()], &self.mon)
         };
         let fs_all = self.tucked || kind != 0;
         self.fs_peekable = !self.tucked && kind == 1;
@@ -2824,6 +3233,9 @@ impl App {
             self.kill_timer(T_PEEK);
         }
         let fs = fs_all && !(self.peek && self.fs_peekable);
+        if fs {
+            self.finish_note_editing(false);
+        }
         if fs && !self.hidden && !self.fade_out_done {
             // fade out first; this runs again once the fade has finished
             self.fade_to = 0.0;
@@ -2844,6 +3256,7 @@ impl App {
         }
         if fs != self.hidden {
             self.hidden = fs;
+            self.hide_note_editor_if_unused();
             unsafe {
                 let _ = ShowWindow(self.hwnd, if fs { SW_HIDE } else { SW_SHOWNOACTIVATE });
             }
@@ -2975,25 +3388,31 @@ fn boost(c: Color) -> Color {
     )
 }
 
-/// Three clear tones, independent of the Windows sound scheme (which is often
-/// muted). Runs on its own thread because Beep() blocks for its duration.
-/// Short game sounds, played one batch at a time so they never pile up.
-fn play_sfx(list: Vec<(u32, u32)>) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static BUSY: AtomicBool = AtomicBool::new(false);
-    if list.is_empty() || BUSY.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    std::thread::spawn(move || {
-        for (hz, ms) in list.into_iter().take(3) {
-            unsafe {
-                let _ = Beep(hz.clamp(37, 32_000), ms.clamp(10, 400));
+unsafe extern "system" fn note_editor_proc(
+    hwnd: HWND,
+    msg: u32,
+    wp: WPARAM,
+    lp: LPARAM,
+    _id: usize,
+    data: usize,
+) -> LRESULT {
+    if msg == WM_KEYDOWN {
+        let key = wp.0 as u16;
+        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
+        if key == VK_ESCAPE.0 || (key == VK_RETURN.0 && ctrl) {
+            if data != 0 {
+                let _ = PostMessageW(
+                    Some(HWND(data as *mut _)),
+                    self::WM_NOTES_CHANGED,
+                    WPARAM(key as usize),
+                    LPARAM(0),
+                );
             }
+            return LRESULT(0);
         }
-        BUSY.store(false, Ordering::Release);
-    });
+    }
+    DefSubclassProc(hwnd, msg, wp, lp)
 }
-
 fn alarm_sound() {
     std::thread::spawn(|| unsafe {
         for _ in 0..3 {
@@ -3035,6 +3454,17 @@ mod smart_tests {
 
     fn msg(t: &str) -> Option<&'static str> {
         clip_hint(t).map(|h| h.msg)
+    }
+
+    #[test]
+    fn app_launch_waits_for_release_on_the_same_tile() {
+        assert_eq!(
+            app_launch_on_release(Some(2), Some(Act::Launch(2))),
+            Some(2)
+        );
+        assert_eq!(app_launch_on_release(Some(2), Some(Act::Launch(1))), None);
+        assert_eq!(app_launch_on_release(Some(2), Some(Act::AppAdd)), None);
+        assert_eq!(app_launch_on_release(None, Some(Act::Launch(2))), None);
     }
 
     #[test]
@@ -3083,6 +3513,14 @@ mod preview {
         a.radios.wifi = Some(true);
         a.radios.bluetooth = Some(false);
         a.stats = Some((23, 61));
+        let stamp = crate::cal::now().0 * 1000;
+        a.notes = vec![Note {
+            id: 1,
+            updated_at: stamp,
+            title: String::new(),
+            body: "Weekend ideas\nTake a walk by the lake.\nBring a notebook and sketch the view.\n随手记下沿途的想法。".into(),
+        }];
+        a.note_sel = Some(1);
         let render = |a: &App, name: &str| {
             let (pw, ph) = ((EXP_W * scale) as i32, (EXP_H * scale) as i32);
             a.gfx.begin(pw, ph).unwrap();
@@ -3125,17 +3563,6 @@ mod preview {
         render(&a, "shelf_drop");
         a.shelf_hover = false;
         a.shelf.clear();
-        // each game while it is running
-        a.page = Page::Game;
-        for k in 0..4 {
-            a.hub.pick(k);
-            a.hub.click();
-            for i in 0..100 {
-                let inp = crate::games::Input { x: 150.0 + (i as f32 * 3.0), y: 80.0 + (i as f32 * 0.5).sin() * 40.0, down: i % 50 < 10 };
-                a.hub.step(0.016, &inp);
-            }
-            render(&a, &format!("play{k}"));
-        }
         // the app picker: loading, then the real list from Windows with icons
         a.page = Page::Apps;
         a.picking = true;
@@ -3299,8 +3726,6 @@ mod preview {
         full(&mut a, Page::Apps);
         a.picking = false;
         shot(&a, EXP_W, EXP_H, 900, "Pin your apps");
-        full(&mut a, Page::Game);
-        shot(&a, EXP_W, EXP_H, 1100, "...and a quick game for your break");
         std::fs::write(format!("{dir}/frames.txt"), list.join("\n")).unwrap();
     }
 
@@ -3334,7 +3759,6 @@ mod preview {
             }
         }
     }
-
 
     /// Real-UI pieces for the demo video: the full bar, dropdowns, every page, buddies.
     /// PREVIEW_DIR=... cargo test --release preview::render_demo_assets -- --ignored

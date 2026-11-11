@@ -4,7 +4,7 @@
 
 use crate::app::*;
 use crate::gfx::*;
-use crate::store::{clip_kind_of, preview, ClipKind};
+use crate::store::{clip_kind_of, note_title, preview, ClipKind};
 use crate::sys;
 
 const BLACK: Color = Color(0.0, 0.0, 0.0, 1.0);
@@ -16,6 +16,7 @@ const HOVER: Color = Color::white(0.17);
 
 /// How far the page area sits below the top of the open panel (the tab row is above it).
 pub const CONTENT_Y: f32 = 40.0;
+pub const NOTE_EDITOR_RECT: Rect = Rect::new(270.0, 14.0, 300.0, 150.0);
 
 pub fn draw(a: &App, w: f32, h: f32, hits: &mut Vec<Hit>) {
     let g = &a.gfx;
@@ -404,7 +405,7 @@ pub fn squash(jiggle: f32) -> (f32, f32) {
     (a.0 + (b.0 - a.0) * k, a.1 + (b.1 - a.1) * k)
 }
 
-const TAB_LABELS: [&str; 9] = ["Media", "Controls", "Today", "Stats", "Clipboard", "Shelf", "Apps", "Games", "Settings"];
+const TAB_LABELS: [&str; 9] = ["Media", "Controls", "Today", "Stats", "Clipboard", "Shelf", "Apps", "Notes", "Settings"];
 
 /// Where each tab sits in the top row, in the same order as `PAGES`.
 pub fn tab_rects() -> Vec<Rect> {
@@ -470,24 +471,8 @@ fn draw_expanded(a: &App, ca: f32, hits: &mut Vec<Hit>) {
         Page::Shelf => page_shelf(a, ca, hits),
         Page::Tasks => page_tasks(a, ca, hits),
         Page::Stats => page_stats(a, ca),
+        Page::Notes => page_notes(a, ca, hits),
         Page::Settings => page_settings(a, ca, hits),
-        Page::Game => {
-            let (ox, oy) = ((EXP_W - crate::game::W) / 2.0, 14.0);
-            if a.hub.is_playing() {
-                hits.push(Hit { r: Rect::new(ox, oy, crate::game::W, crate::game::H), act: Act::GameClick });
-                a.hub.draw(g, ox, oy, ca);
-                let r = Rect::new(ox + crate::game::W / 2.0 - 36.0, oy + 3.0, 72.0, 18.0);
-                hits.push(Hit { r, act: Act::GameBack });
-                g.fill_rrect(r, 9.0, (if hot(a, Act::GameBack) { HOVER } else { Color(0.0, 0.0, 0.0, 0.35) }).fade(ca));
-                g.text("\u{2039} Games", r, &f.tiny, T1.fade(ca), Align::Center);
-            } else {
-                let hot_tile = (0..4).find(|i| hot(a, Act::GamePick(*i)));
-                a.hub.draw_hub(g, ox, oy, ca, hot_tile);
-                for (i, r) in crate::games::Hub::tiles(ox, oy).iter().enumerate() {
-                    hits.push(Hit { r: *r, act: Act::GamePick(i) });
-                }
-            }
-        }
     };
     if a.page_t < 1.0 {
         // cross-fade: the old page drifts up and fades out (not clickable), the new one rises in
@@ -503,6 +488,199 @@ fn draw_expanded(a: &App, ca: f32, hits: &mut Vec<Hit>) {
     }
 }
 
+// ----------------------------------------------------------------- notes ----
+
+fn note_time(updated_at: i64) -> String {
+    let (_, m, d, _, h, minute, ..) = sys::local_time();
+    let today = crate::cal::now().0;
+    let local = updated_at.div_euclid(1000);
+    let date = crate::cal::local_day(local);
+    let day = crate::cal::local_day(today);
+    if date == day {
+        format!("{h:02}:{minute:02}")
+    } else if date + 1 == day {
+        crate::i18n::tr("Yesterday").to_string()
+    } else if date + 1 < day {
+        format!("{m:02}-{d:02}")
+    } else {
+        format!("{m:02}-{d:02}")
+    }
+}
+
+fn page_notes(a: &App, ca: f32, hits: &mut Vec<Hit>) {
+    let g = &a.gfx;
+    let f = &g.fonts;
+    let list = Rect::new(14.0, 2.0, 228.0, 190.0);
+    let editor = Rect::new(254.0, 2.0, 332.0, 190.0);
+    g.fill_rrect(list, 18.0, Color::white(0.045 * ca));
+    g.fill_rrect(editor, 18.0, crate::note_edit::BACKGROUND.fade(ca));
+
+    let title = if crate::i18n::is_zh() {
+        format!("随手记  ·  {}", a.notes.len())
+    } else {
+        format!("Notes  ·  {}", a.notes.len())
+    };
+    g.text(
+        &title,
+        Rect::new(28.0, 10.0, 154.0, 26.0),
+        &f.menu,
+        T1.fade(ca),
+        Align::Left,
+    );
+    let add = Rect::new(184.0, 10.0, 46.0, 24.0);
+    if a.notes.len() < crate::store::NOTE_MAX {
+        hits.push(Hit {
+            r: add,
+            act: Act::NoteAdd,
+        });
+        g.fill_rrect(
+            add,
+            12.0,
+            (if hot(a, Act::NoteAdd) { HOVER } else { SURF }).fade(ca),
+        );
+        g.text("+", add, &f.body, a.accent.fade(ca), Align::Center);
+    } else {
+        g.fill_rrect(add, 12.0, Color::white(0.04 * ca));
+        g.text("+", add, &f.body, T3.fade(ca), Align::Center);
+    }
+
+    if a.notes.is_empty() {
+        g.icon(
+            '\u{E70B}',
+            Rect::new(90.0, 60.0, 50.0, 44.0),
+            &f.icon22,
+            T3.fade(ca),
+        );
+        g.text(
+            "Nothing written yet.",
+            Rect::new(28.0, 110.0, 200.0, 24.0),
+            &f.body,
+            T2.fade(ca),
+            Align::Center,
+        );
+        g.text(
+            "Click + to start a note.",
+            Rect::new(28.0, 134.0, 200.0, 20.0),
+            &f.small,
+            T3.fade(ca),
+            Align::Center,
+        );
+        g.text(
+            "Jot down a line, a quote or a bright idea.",
+            Rect::new(268.0, 66.0, 304.0, 28.0),
+            &f.body,
+            T3.fade(ca),
+            Align::Center,
+        );
+        g.text(
+            "Saved on this PC as you type.",
+            Rect::new(268.0, 96.0, 304.0, 22.0),
+            &f.small,
+            T3.fade(ca),
+            Align::Center,
+        );
+        return;
+    }
+
+    for row in 0..NOTES_ROWS {
+        let i = a.note_scroll + row;
+        let Some(note) = a.notes.get(i) else { break };
+        let r = Rect::new(22.0, 40.0 + row as f32 * 29.0, 212.0, 27.0);
+        let select = Act::NoteSelect(i);
+        let stamp = Rect::new(r.x + r.w - 56.0, r.y + 4.0, 46.0, 19.0);
+        let delete = Act::NoteDelete(i);
+        hits.push(Hit { r, act: select });
+        hits.push(Hit {
+            r: stamp,
+            act: delete,
+        });
+        let selected = a.note_sel == Some(note.id);
+        g.fill_rrect(
+            r,
+            10.0,
+            if selected {
+                a.accent.fade(0.14 * ca)
+            } else if hot(a, select) {
+                Color::white(0.08 * ca)
+            } else {
+                Color::white(0.0)
+            },
+        );
+        let label = note_title(note);
+        g.text(
+            &label,
+            Rect::new(r.x + 9.0, r.y, r.w - 72.0, r.h),
+            &f.small,
+            (if selected { T1 } else { T2 }).fade(ca),
+            Align::Left,
+        );
+        let armed = a.note_delete_armed(note.id);
+        if hot(a, delete) {
+            g.text(
+                if armed { "\u{E711}" } else { "\u{E74D}" },
+                stamp,
+                &f.icon14,
+                if armed { C_PINK } else { T1 }.fade(ca),
+                Align::Right,
+            );
+        } else {
+            g.text(
+                &note_time(note.updated_at),
+                stamp,
+                &f.tiny,
+                T3.fade(ca),
+                Align::Right,
+            );
+        }
+    }
+    if a.notes.len() > NOTES_ROWS {
+        let top = 40.0;
+        let h = NOTES_ROWS as f32 * 29.0 - 3.0;
+        let track = Rect::new(237.0, top, 4.0, h);
+        g.fill_rrect(track, 2.0, Color::white(0.07 * ca));
+        let th = (h * NOTES_ROWS as f32 / a.notes.len() as f32).max(18.0);
+        let frac = a.note_scroll as f32 / (a.notes.len() - NOTES_ROWS) as f32;
+        g.fill_rrect(
+            Rect::new(track.x, top + (h - th) * frac.clamp(0.0, 1.0), 4.0, th),
+            2.0,
+            a.accent.fade(0.75 * ca),
+        );
+    }
+
+    let Some(note) = a.selected_note() else {
+        return;
+    };
+    if a.note_editor_visible() {
+        g.text(
+            "Ctrl+Enter or Esc to finish",
+            Rect::new(270.0, 171.0, 306.0, 16.0),
+            &f.tiny,
+            T3.fade(ca),
+            Align::Left,
+        );
+    } else {
+        let body = if note.body.is_empty() {
+            crate::i18n::tr("Click to start writing.").to_string()
+        } else {
+            note.body.clone()
+        };
+        g.text_block(
+            &body,
+            NOTE_EDITOR_RECT,
+            &f.note,
+            (if note.body.is_empty() {
+                T3
+            } else {
+                crate::note_edit::FOREGROUND
+            })
+            .fade(ca),
+        );
+        hits.push(Hit {
+            r: editor,
+            act: Act::NoteEdit,
+        });
+    }
+}
 // ----------------------------------------------------------------- media ----
 
 fn page_media(a: &App, ca: f32, hits: &mut Vec<Hit>) {

@@ -273,6 +273,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
     let Some(a) = app() else {
         return DefWindowProcW(hwnd, msg, wp, lp);
     };
+    if a.is_note_host(hwnd) {
+        return a.note_host_msg(hwnd, msg, wp, lp);
+    }
     if a.is_bar(hwnd) {
         return a.bar_msg(hwnd, msg, wp, lp);
     }
@@ -287,7 +290,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_MOUSEMOVE => a.on_mouse_move(lo(lp), hi(lp)),
         WM_MOUSELEAVE => a.on_mouse_leave(),
         WM_LBUTTONDOWN => a.on_lbutton_down(lo(lp), hi(lp)),
-        WM_LBUTTONUP => a.on_lbutton_up(),
+        WM_LBUTTONUP => a.on_lbutton_up(lo(lp), hi(lp)),
         WM_MOUSEWHEEL => {
             let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16 as i32;
             let mut p = POINT {
@@ -300,7 +303,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_CHAR => a.on_char(wp.0 as u16),
         WM_KILLFOCUS => a.on_kill_focus(),
         WM_MOUSEACTIVATE => {
-            let r = if a.is_entering() {
+            let r = if a.is_entering() || a.note_editing {
                 MA_ACTIVATE
             } else {
                 MA_NOACTIVATE
@@ -324,6 +327,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             PostQuitMessage(0)
         }
         m if m == app::WM_FRAME => a.on_frame(),
+        m if m == app::WM_NOTES_CHANGED => {
+            a.note_editor_key(wp.0 as u16);
+        }
         m if m == media::WM_MEDIA => a.on_media(),
         m if m == radio::WM_RADIO => a.on_radio(),
         m if m == radio::WM_BTDONE => a.on_bt_done(wp.0 != 0),
@@ -626,6 +632,7 @@ mod tests {
             ("update", sys::WM_UPDATE),
             ("mic", sys::WM_MIC),
             ("frame", app::WM_FRAME),
+            ("notes changed", app::WM_NOTES_CHANGED),
         ];
         for (i, (na, a)) in all.iter().enumerate() {
             for (nb, b) in &all[i + 1..] {

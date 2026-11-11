@@ -25,6 +25,10 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 const LOOKBACK: i64 = 600;
 const LOOKAHEAD: i64 = 36 * 3600;
 
+pub fn local_day(local_epoch: i64) -> i64 {
+    local_epoch.div_euclid(86400)
+}
+
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);

@@ -56,9 +56,8 @@ pub fn tr(s: &str) -> &str {
         "Clipboard" => "剪贴板",
         "Shelf" => "架子",
         "Apps" => "应用",
-        "Games" => "游戏",
+        "Notes" => "便签",
         "Settings" => "设置",
-        "‹ Games" => "‹ 游戏",
 
         // ---------------------------------------------- settings page groups
         "General" => "通用",

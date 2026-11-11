@@ -1,10 +1,6 @@
-//! Drawing API shared by every platform. The backend (`gfx_win`: Direct2D,
-//! `gfx_linux`: tiny-skia + fontdue) provides `Gfx`, `Fonts`, `Font` and `Bitmap`.
+//! Drawing API. The Windows backend (`gfx_win`: Direct2D) provides `Gfx`, `Fonts`, `Font` and `Bitmap`.
 
-#[cfg(windows)]
 pub use crate::gfx_win::*;
-#[cfg(not(windows))]
-pub use crate::gfx_linux::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
