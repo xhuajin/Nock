@@ -3,6 +3,7 @@
 mod app;
 mod bar;
 mod buddy;
+mod brightness_wmi;
 mod cal;
 mod cast;
 mod pixdata;

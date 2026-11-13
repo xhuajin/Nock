@@ -256,7 +256,7 @@ It is a native Rust program with no web view and no background polling, so it av
 - Nock's windows have no title and are tool windows, so window pickers (OBS, screen recorders, Alt-Tab) should not list them. They still appear in full-screen / display captures, because they are drawn on the desktop.
 - Media controls only do what the playing app allows through Windows. Apple Music for Windows, for example, does not let other programs seek, so its progress bar is display-only, and its Previous button is greyed out whenever the app reports it as unavailable.
 - Wi-Fi and Bluetooth buttons in the top bar toggle the radio through the Windows Radios API. If Windows exposes no such radio (or denies access) the button opens the matching Settings page instead.
-- Brightness on laptop panels is set through the display driver directly (instant, follows the slider as you drag). If the driver does not offer that, it falls back to a slower WMI call through PowerShell.
+- Brightness on laptop panels is set through the display driver directly (instant, follows the slider as you drag). If the driver does not offer that, it falls back to native WMI/COM calls without starting PowerShell.
 - The volume slider follows the Windows default output device. Apps routed to a different device under Settings â†?Sound â†?Volume mixer aren't affected.
 - *Sleep* uses the standard suspend call; if hibernation is enabled on your PC Windows may hibernate instead.
 - The calendar shows the month only (no events). There is no weather or notification peek.

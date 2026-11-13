@@ -2,7 +2,7 @@
 
 Ideas that are well contained and don't need deep knowledge of the code. Pick one, open an issue to say you're on it, and send a pull request.
 
-- **Faster brightness changes.** The slider can feel slow on some laptops (the fallback uses WMI through PowerShell). Look at `src/sys.rs` and see if the direct display-driver path can be used more often, or the change batched / debounced.
+- **Faster brightness changes.** The slider can feel slow on some laptops (the fallback uses native WMI/COM). Look at `src/sys.rs` and see if the direct display-driver path can be used more often, or the WMI connection reused during a drag.
 - **Add a pixel-art buddy.** Characters are 26x28 pixel grids (`src/pixdata.rs`) drawn in `src/cast.rs`. Design a new one and a few lines of dialogue.
 - **New scene.** Scenes are keyframe scripts in `src/scene.rs` (`script()`); the unit tests check they are well formed.
 - **New game or a new mode.** The arcade lives in `src/games.rs`: each game has `step`, `click` and `draw`, a tile on the hub, and a saved best score. Mouse only, and short rounds work best.

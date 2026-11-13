@@ -125,8 +125,8 @@ fn mic_endpoint() -> Option<IAudioEndpointVolume> {
 }
 
 // -------------------------------------------------------------- brightness
-// Internal laptop panels are only reachable through WMI. Spawning PowerShell
-// is slow (~0.3 s) but only happens on open / on slider release, never idle.
+// Try the display driver first, then WMI through COM. Brightness never starts
+// PowerShell: the encoded-script fallback triggered security warnings at login.
 
 pub(crate) fn powershell(cmd: &str) -> Option<String> {
     use std::process::{Command, Stdio};
@@ -226,7 +226,7 @@ fn base64(data: &[u8]) -> String {
 
 // Native path: the display driver's own IOCTLs on \\.\LCD. Takes a millisecond, no
 // process to start. Works for built-in laptop panels; anything else falls back to
-// the slower WMI route below.
+// the WMI route below.
 
 const IOCTL_SUPPORTED: u32 = 0x0023_0406;
 const IOCTL_QUERY: u32 = 0x0023_0408;
@@ -346,16 +346,9 @@ fn native_brightness_set(percent: u32) -> bool {
 pub fn brightness_load(hwnd: isize) {
     std::thread::spawn(move || {
         let v = native_brightness_get().or_else(|| {
-            powershell(
-                "$b = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentBrightness; if ($null -eq $b) { $b = (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentBrightness }; Write-Output $b",
-            )
-            .and_then(|s| {
-                let t = s.trim().to_string();
-                let p = t.parse::<u32>().ok();
-                if p.is_none() {
-                    log_brightness(&format!("brightness query returned: {:?}", t));
-                }
-                p
+            crate::brightness_wmi::get().unwrap_or_else(|e| {
+                log_brightness(&format!("WMI brightness query failed: {e}"));
+                None
             })
         });
         unsafe {
@@ -384,10 +377,9 @@ pub fn brightness_set(percent: u32) {
         let v = BRI_PENDING.swap(-1, SeqCst);
         if v >= 0 {
             if !native_brightness_set(v as u32) {
-                let _ = powershell(&format!(
-                    "Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{{Timeout=1;Brightness={}}}",
-                    v
-                ));
+                if let Err(e) = crate::brightness_wmi::set(v as u32) {
+                    log_brightness(&format!("WMI brightness set failed: {e}"));
+                }
             }
             continue;
         }
