@@ -319,9 +319,10 @@ pub struct App {
     /// Pressed app tile; its launch is committed only if the button is released on it.
     app_press: Option<usize>,
     drag: Option<Drag>,
-    /// CPU and memory percent for the top bar (when enabled)
+    /// Latest CPU and memory percent shared by the bar, glance and Stats page.
     pub stats: Option<(u32, u32)>,
-    cpu_prev: (u64, u64),
+    /// Previous counters while the shared sampling timer is active.
+    cpu_prev: Option<(u64, u64)>,
     pub seek_frac: Option<f32>,
     tracking: bool,
 
@@ -526,7 +527,7 @@ impl App {
             app_press: None,
             drag: None,
             stats: None,
-            cpu_prev: (0, 0),
+            cpu_prev: None,
             seek_frac: None,
             tracking: false,
             media: media::start(hwnd.0 as isize),
@@ -1373,9 +1374,8 @@ impl App {
     /// Start/stop the 1 Hz timer that is only needed for a moving progress bar,
     /// the volume read-out and a running focus timer.
     pub fn sync_timers(&mut self) {
-        let need = !self.hidden
-            && ((self.expanded && self.mstate.playing)
-                || self.timer_running());
+        self.sync_stats();
+        let need = !self.hidden && ((self.expanded && self.mstate.playing) || self.timer_running());
         if need && !self.sec_on {
             self.set_timer(T_SEC, 1000);
             self.sec_on = true;
@@ -1691,13 +1691,26 @@ impl App {
         self.render();
     }
 
-    /// Start or stop the 3 s CPU/RAM sampling to match the setting.
+    fn stats_page_visible(&self) -> bool {
+        self.expanded && !self.hidden && self.page == Page::Stats
+    }
+
+    /// Sample every 3 s while the bar, glance or Stats page needs the values.
     pub fn sync_stats(&mut self) {
-        if self.cfg.stats || self.glance_kind() == 3 {
-            self.cpu_prev = sys::cpu_times();
-            self.set_timer(T_STATS, 3000);
+        let needed = (self.cfg.stats && self.bar_visible())
+            || (self.glance_kind() == 3 && !self.hidden)
+            || self.stats_page_visible();
+        if needed {
+            // Repeated media/visibility events must not postpone the next sample
+            // or reset the CPU baseline while the timer is already running.
+            if self.cpu_prev.is_none() {
+                self.cpu_prev = Some(sys::cpu_times());
+                self.stat_mem = sys::mem_percent();
+                self.set_timer(T_STATS, 3000);
+            }
         } else {
             self.kill_timer(T_STATS);
+            self.cpu_prev = None;
             self.stats = None;
         }
     }
@@ -1898,17 +1911,40 @@ impl App {
     }
 
     fn on_stats_tick(&mut self) {
-        // sampled for the bar read-out and/or the idle glance, never otherwise
+        // The Stats page samples independently of the optional bar and glance.
         let on_bar = self.cfg.stats && self.bar_visible();
         let on_pill = self.glance_kind() == 3 && !self.hidden;
-        if !on_bar && !on_pill {
+        let on_page = self.stats_page_visible();
+        if !on_bar && !on_pill && !on_page {
+            self.sync_stats();
             return;
         }
+        let Some(previous) = self.cpu_prev else {
+            return;
+        };
         let (idle, total) = sys::cpu_times();
-        let (di, dt) = (idle.wrapping_sub(self.cpu_prev.0), total.wrapping_sub(self.cpu_prev.1));
-        self.cpu_prev = (idle, total);
-        let cpu = if dt == 0 { 0 } else { (100 - (di.min(dt) * 100 / dt)) as u32 };
-        let now = Some((cpu, sys::mem_percent()));
+        let (di, dt) = (
+            idle.wrapping_sub(previous.0),
+            total.wrapping_sub(previous.1),
+        );
+        self.cpu_prev = Some((idle, total));
+        let cpu = if dt == 0 {
+            0
+        } else {
+            (100 - (di.min(dt) * 100 / dt)) as u32
+        };
+        let memory = sys::mem_percent();
+        self.stat_cpu = cpu;
+        self.stat_mem = memory;
+        if on_page {
+            self.stat_hist.push(cpu as f32 / 100.0);
+            if self.stat_hist.len() > 40 {
+                self.stat_hist.remove(0);
+            }
+            self.retarget();
+            self.render();
+        }
+        let now = Some((cpu, memory));
         if now != self.stats {
             let first = self.stats.is_none();
             self.stats = now;
@@ -3485,6 +3521,129 @@ mod smart_tests {
 mod preview {
     use super::*;
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+
+    #[test]
+    #[ignore = "requires native Windows rendering and system counters"]
+    fn stats_page_samples_without_bar_or_glance() {
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
+        }
+        struct TestWindow(HWND);
+        impl Drop for TestWindow {
+            fn drop(&mut self) {
+                unsafe {
+                    let _ = DestroyWindow(self.0);
+                }
+            }
+        }
+        let window = TestWindow(unsafe {
+            CreateWindowExW(
+                WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Nock stats test"),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        });
+        let mut a = App::new(window.0, 1.0).unwrap();
+        a.cfg.top_bar = false;
+        a.cfg.stats = false;
+        a.cfg.idle_cycle = false;
+        a.cfg.idle_glance = 0;
+        a.hidden = false;
+        a.select_page(Page::Stats);
+        a.set_expanded(true);
+        assert!(a.cpu_prev.is_some(), "opening Stats must start sampling");
+        assert!(a.stat_mem > 0, "memory should be available immediately");
+        assert!(a.stats.is_none(), "CPU needs a complete sampling interval");
+
+        let baseline = a.cpu_prev;
+        a.sync_timers();
+        assert_eq!(
+            a.cpu_prev, baseline,
+            "unrelated events must preserve the CPU baseline"
+        );
+        // Wait for the real timer message, so this also verifies that opening
+        // Stats arms sampling without either of the other display consumers.
+        const TEST_TIMEOUT: usize = 0x7fff;
+        a.set_timer(TEST_TIMEOUT, 10_000);
+        let mut message = MSG::default();
+        loop {
+            assert!(unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool());
+            if message.message == WM_TIMER && message.wParam.0 == TEST_TIMEOUT {
+                panic!("Stats sampling timer did not fire");
+            }
+            if message.message == WM_TIMER && message.wParam.0 == T_STATS {
+                a.on_timer(T_STATS);
+                break;
+            }
+            if message.message == WM_FRAME {
+                a.on_frame();
+            }
+        }
+        a.kill_timer(TEST_TIMEOUT);
+        assert_eq!(a.stats, Some((a.stat_cpu, a.stat_mem)));
+        assert!(a.stat_mem > 0);
+        assert_eq!(a.stat_hist, vec![a.stat_cpu as f32 / 100.0]);
+        for _ in 0..120 {
+            a.step_ui(1.0 / 60.0);
+        }
+        assert!((a.bar_mem - a.stat_mem as f32 / 100.0).abs() < 0.003);
+        println!(
+            "Stats page: CPU {}%, memory {}%, {} history samples",
+            a.stat_cpu,
+            a.stat_mem,
+            a.stat_hist.len()
+        );
+
+        if let Ok(dir) = std::env::var("PREVIEW_DIR") {
+            a.sw = Spring::new(EXP_W);
+            a.sh = Spring::new(EXP_H);
+            a.page_t = 1.0;
+            a.render();
+            let (width, _, pixels) = a.gfx.snapshot();
+            let (pw, ph) = (EXP_W as i32, EXP_H as i32);
+            let mut output = Vec::new();
+            output.extend_from_slice(&(pw as u32).to_le_bytes());
+            output.extend_from_slice(&(ph as u32).to_le_bytes());
+            for y in 0..ph {
+                let start = (y * width * 4) as usize;
+                output.extend_from_slice(&pixels[start..start + (pw * 4) as usize]);
+            }
+            std::fs::write(std::path::Path::new(&dir).join("stats_live.raw"), output).unwrap();
+        }
+
+        for _ in 0..45 {
+            a.on_stats_tick();
+        }
+        assert_eq!(a.stat_hist.len(), 40, "history must stay bounded");
+        a.select_page(Page::Tasks);
+        assert!(
+            a.cpu_prev.is_none(),
+            "leaving Stats must stop unused sampling"
+        );
+        a.select_page(Page::Stats);
+        assert!(a.cpu_prev.is_some());
+        a.set_expanded(false);
+        assert!(
+            a.cpu_prev.is_none(),
+            "collapsing the panel must stop unused sampling"
+        );
+        a.set_expanded(true);
+        assert!(a.cpu_prev.is_some());
+        a.hidden = true;
+        a.sync_timers();
+        assert!(a.cpu_prev.is_none(), "hidden pages must not sample");
+        a.set_anim(0);
+    }
 
     #[test]
     #[ignore]

@@ -124,6 +124,7 @@ impl App {
 
     /// Show/hide the bar window to match settings, then repaint it.
     pub fn sync_bar(&mut self) {
+        self.sync_stats();
         let vis = self.bar_visible();
         if let Some(b) = &self.bar {
             unsafe {
@@ -231,7 +232,7 @@ impl App {
         let (vol, muted, has_vol) = (self.volume, self.muted, self.has_volume);
         let clock24 = self.cfg.clock_24h;
         let clock_style = self.cfg.clock_style;
-        let stats = self.stats;
+        let stats = self.stats.filter(|_| self.cfg.stats);
         let accent = self.accent;
         let active = self.pop_kind();
         // connecting: the icon breathes while a Wi-Fi / Bluetooth attempt is running
